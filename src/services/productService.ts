@@ -1,5 +1,4 @@
-import { API_URL } from "./api";
-import { getAuthHeaders } from "./authService";
+import { apiFetch, getApiErrorMessage } from "./api";
 
 export type Product = {
   id: string;
@@ -40,98 +39,96 @@ type UpdateProductData = {
   is_new?: boolean;
 };
 
-export async function getProducts(restaurantId: string) {
-  const response = await fetch(
-    `${API_URL}/products?restaurant_id=${restaurantId}`,
+export async function getProducts(
+  restaurantId: string,
+): Promise<Product[]> {
+  const response = await apiFetch(
+    `/products?restaurant_id=${encodeURIComponent(restaurantId)}`,
     {
-      headers: {
-        ...getAuthHeaders(),
-      },
+      method: "GET",
     },
   );
 
   if (!response.ok) {
-    throw new Error("Erro ao buscar produtos");
+    throw new Error(
+      await getApiErrorMessage(response, "Erro ao buscar produtos"),
+    );
   }
 
   return response.json();
 }
 
-export async function createProduct(data: CreateProductData) {
-  const response = await fetch(`${API_URL}/products`, {
+export async function createProduct(
+  data: CreateProductData,
+): Promise<Product> {
+  const response = await apiFetch("/products", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...getAuthHeaders(),
-    },
     body: JSON.stringify(data),
   });
 
   if (!response.ok) {
-    throw new Error("Erro ao criar produto");
+    throw new Error(
+      await getApiErrorMessage(response, "Erro ao criar produto"),
+    );
   }
 
   return response.json();
 }
 
-export async function updateProduct(id: string, data: UpdateProductData) {
-  const response = await fetch(`${API_URL}/products/${id}`, {
+export async function updateProduct(
+  id: string,
+  data: UpdateProductData,
+): Promise<Product> {
+  const response = await apiFetch(`/products/${id}`, {
     method: "PATCH",
-    headers: {
-      "Content-Type": "application/json",
-      ...getAuthHeaders(),
-    },
     body: JSON.stringify(data),
   });
 
   if (!response.ok) {
-    throw new Error("Erro ao atualizar produto");
+    throw new Error(
+      await getApiErrorMessage(response, "Erro ao atualizar produto"),
+    );
   }
 
   return response.json();
 }
 
-export async function activateProduct(id: string) {
-  const response = await fetch(`${API_URL}/products/${id}/activate`, {
+export async function activateProduct(id: string): Promise<Product> {
+  const response = await apiFetch(`/products/${id}/activate`, {
     method: "PATCH",
-    headers: {
-      ...getAuthHeaders(),
-    },
   });
 
   if (!response.ok) {
-    throw new Error("Erro ao ativar produto");
+    throw new Error(
+      await getApiErrorMessage(response, "Erro ao ativar produto"),
+    );
   }
 
   return response.json();
 }
 
-export async function disableProduct(id: string) {
-  const response = await fetch(`${API_URL}/products/${id}/disable`, {
+export async function disableProduct(id: string): Promise<Product> {
+  const response = await apiFetch(`/products/${id}/disable`, {
     method: "PATCH",
-    headers: {
-      ...getAuthHeaders(),
-    },
   });
 
   if (!response.ok) {
-    throw new Error("Erro ao desativar produto");
+    throw new Error(
+      await getApiErrorMessage(response, "Erro ao desativar produto"),
+    );
   }
 
   return response.json();
 }
 
-export async function deleteProduct(id: string) {
-  const response = await fetch(`${API_URL}/products/${id}`, {
+export async function deleteProduct(id: string): Promise<void> {
+  const response = await apiFetch(`/products/${id}`, {
     method: "DELETE",
-    headers: {
-      ...getAuthHeaders(),
-    },
   });
 
   if (!response.ok) {
-    throw new Error("Erro ao excluir produto");
+    throw new Error(
+      await getApiErrorMessage(response, "Erro ao excluir produto"),
+    );
   }
-
-  return response.json();
 }

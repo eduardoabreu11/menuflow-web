@@ -1,7 +1,4 @@
-// src/services/categoryService.ts
-
-import { API_URL } from "./api";
-import { getAuthHeaders } from "./authService";
+import { apiFetch, getApiErrorMessage } from "./api";
 
 export type Category = {
   id: string;
@@ -27,98 +24,96 @@ type UpdateCategoryData = {
   sort_order?: number;
 };
 
-export async function getCategories(restaurantId: string) {
-  const response = await fetch(
-    `${API_URL}/categories?restaurant_id=${restaurantId}`,
+export async function getCategories(
+  restaurantId: string,
+): Promise<Category[]> {
+  const response = await apiFetch(
+    `/categories?restaurant_id=${encodeURIComponent(restaurantId)}`,
     {
-      headers: {
-        ...getAuthHeaders(),
-      },
-    }
+      method: "GET",
+    },
   );
 
   if (!response.ok) {
-    throw new Error("Erro ao buscar categorias");
+    throw new Error(
+      await getApiErrorMessage(response, "Erro ao buscar categorias"),
+    );
   }
 
   return response.json();
 }
 
-export async function createCategory(data: CreateCategoryData) {
-  const response = await fetch(`${API_URL}/categories`, {
+export async function createCategory(
+  data: CreateCategoryData,
+): Promise<Category> {
+  const response = await apiFetch("/categories", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...getAuthHeaders(),
-    },
     body: JSON.stringify(data),
   });
 
   if (!response.ok) {
-    throw new Error("Erro ao criar categoria");
+    throw new Error(
+      await getApiErrorMessage(response, "Erro ao criar categoria"),
+    );
   }
 
   return response.json();
 }
 
-export async function updateCategory(id: string, data: UpdateCategoryData) {
-  const response = await fetch(`${API_URL}/categories/${id}`, {
+export async function updateCategory(
+  id: string,
+  data: UpdateCategoryData,
+): Promise<Category> {
+  const response = await apiFetch(`/categories/${id}`, {
     method: "PATCH",
-    headers: {
-      "Content-Type": "application/json",
-      ...getAuthHeaders(),
-    },
     body: JSON.stringify(data),
   });
 
   if (!response.ok) {
-    throw new Error("Erro ao atualizar categoria");
+    throw new Error(
+      await getApiErrorMessage(response, "Erro ao atualizar categoria"),
+    );
   }
 
   return response.json();
 }
 
-export async function activateCategory(id: string) {
-  const response = await fetch(`${API_URL}/categories/${id}/activate`, {
+export async function activateCategory(id: string): Promise<Category> {
+  const response = await apiFetch(`/categories/${id}/activate`, {
     method: "PATCH",
-    headers: {
-      ...getAuthHeaders(),
-    },
   });
 
   if (!response.ok) {
-    throw new Error("Erro ao ativar categoria");
+    throw new Error(
+      await getApiErrorMessage(response, "Erro ao ativar categoria"),
+    );
   }
 
   return response.json();
 }
 
-export async function disableCategory(id: string) {
-  const response = await fetch(`${API_URL}/categories/${id}/disable`, {
+export async function disableCategory(id: string): Promise<Category> {
+  const response = await apiFetch(`/categories/${id}/disable`, {
     method: "PATCH",
-    headers: {
-      ...getAuthHeaders(),
-    },
   });
 
   if (!response.ok) {
-    throw new Error("Erro ao desativar categoria");
+    throw new Error(
+      await getApiErrorMessage(response, "Erro ao desativar categoria"),
+    );
   }
 
   return response.json();
 }
 
-export async function deleteCategory(id: string) {
-  const response = await fetch(`${API_URL}/categories/${id}`, {
+export async function deleteCategory(id: string): Promise<void> {
+  const response = await apiFetch(`/categories/${id}`, {
     method: "DELETE",
-    headers: {
-      ...getAuthHeaders(),
-    },
   });
 
   if (!response.ok) {
-    throw new Error("Erro ao excluir categoria");
+    throw new Error(
+      await getApiErrorMessage(response, "Erro ao excluir categoria"),
+    );
   }
-
-  return response.json();
 }

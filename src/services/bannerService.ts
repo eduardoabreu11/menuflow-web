@@ -1,5 +1,4 @@
-import { API_URL } from "./api";
-import { getAuthHeaders } from "./authService";
+import { apiFetch, getApiErrorMessage } from "./api";
 
 export type Banner = {
   id: string;
@@ -20,31 +19,32 @@ type UpdateBannerData = {
 };
 
 export async function getBanners(restaurantId: string): Promise<Banner[]> {
-  const response = await fetch(`${API_URL}/banners?restaurant_id=${restaurantId}`, {
-    headers: {
-      ...getAuthHeaders(),
+  const response = await apiFetch(
+    `/banners?restaurant_id=${encodeURIComponent(restaurantId)}`,
+    {
+      method: "GET",
     },
-  });
+  );
 
   if (!response.ok) {
-    throw new Error("Erro ao buscar banners");
+    throw new Error(
+      await getApiErrorMessage(response, "Erro ao buscar banners"),
+    );
   }
 
   return response.json();
 }
 
 export async function createBanner(data: CreateBannerData): Promise<Banner> {
-  const response = await fetch(`${API_URL}/banners`, {
+  const response = await apiFetch("/banners", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...getAuthHeaders(),
-    },
     body: JSON.stringify(data),
   });
 
   if (!response.ok) {
-    throw new Error("Erro ao criar banner");
+    throw new Error(
+      await getApiErrorMessage(response, "Erro ao criar banner"),
+    );
   }
 
   return response.json();
@@ -54,61 +54,56 @@ export async function updateBanner(
   id: string,
   data: UpdateBannerData,
 ): Promise<Banner> {
-  const response = await fetch(`${API_URL}/banners/${id}`, {
+  const response = await apiFetch(`/banners/${id}`, {
     method: "PATCH",
-    headers: {
-      "Content-Type": "application/json",
-      ...getAuthHeaders(),
-    },
     body: JSON.stringify(data),
   });
 
   if (!response.ok) {
-    throw new Error("Erro ao atualizar banner");
+    throw new Error(
+      await getApiErrorMessage(response, "Erro ao atualizar banner"),
+    );
   }
 
   return response.json();
 }
 
 export async function activateBanner(id: string): Promise<Banner> {
-  const response = await fetch(`${API_URL}/banners/${id}/activate`, {
+  const response = await apiFetch(`/banners/${id}/activate`, {
     method: "PATCH",
-    headers: {
-      ...getAuthHeaders(),
-    },
   });
 
   if (!response.ok) {
-    throw new Error("Erro ao ativar banner");
+    throw new Error(
+      await getApiErrorMessage(response, "Erro ao ativar banner"),
+    );
   }
 
   return response.json();
 }
 
 export async function disableBanner(id: string): Promise<Banner> {
-  const response = await fetch(`${API_URL}/banners/${id}/disable`, {
+  const response = await apiFetch(`/banners/${id}/disable`, {
     method: "PATCH",
-    headers: {
-      ...getAuthHeaders(),
-    },
   });
 
   if (!response.ok) {
-    throw new Error("Erro ao desativar banner");
+    throw new Error(
+      await getApiErrorMessage(response, "Erro ao desativar banner"),
+    );
   }
 
   return response.json();
 }
 
 export async function deleteBanner(id: string): Promise<void> {
-  const response = await fetch(`${API_URL}/banners/${id}`, {
+  const response = await apiFetch(`/banners/${id}`, {
     method: "DELETE",
-    headers: {
-      ...getAuthHeaders(),
-    },
   });
 
   if (!response.ok) {
-    throw new Error("Erro ao excluir banner");
+    throw new Error(
+      await getApiErrorMessage(response, "Erro ao excluir banner"),
+    );
   }
 }

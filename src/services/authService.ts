@@ -20,14 +20,6 @@ type LoginResponse = {
   user: AuthUser;
 };
 
-export type SelectedRestaurant = {
-  id: string;
-  name: string;
-  slug: string;
-  owner_user_id: string;
-  status: string;
-};
-
 let currentUser: AuthUser | null = null;
 
 export async function login(data: LoginData): Promise<LoginResponse> {
@@ -90,41 +82,14 @@ export function getUser(): AuthUser | null {
   return currentUser;
 }
 
+export function setUser(user: AuthUser | null) {
+  currentUser = user;
+}
+
 export function clearAuth() {
   currentUser = null;
 
   localStorage.removeItem("menuflow_token");
   localStorage.removeItem("menuflow_user");
-  localStorage.removeItem("menuflow_selected_restaurant");
-}
-
-export function saveAuth(data: LoginResponse) {
-  currentUser = data.user;
-}
-
-export function getToken() {
-  return null;
-}
-
-export function getAuthHeaders() {
-  return {};
-}
-
-export function saveSelectedRestaurant(restaurant: SelectedRestaurant) {
-  localStorage.setItem(
-    "menuflow_selected_restaurant",
-    JSON.stringify(restaurant),
-  );
-}
-
-export function getSelectedRestaurant(): SelectedRestaurant | null {
-  const restaurant = localStorage.getItem("menuflow_selected_restaurant");
-
-  if (!restaurant) return null;
-
-  return JSON.parse(restaurant);
-}
-
-export function clearSelectedRestaurant() {
   localStorage.removeItem("menuflow_selected_restaurant");
 }
