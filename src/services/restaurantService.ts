@@ -1,5 +1,5 @@
-import { API_URL } from "./api";
-import { getAuthHeaders, getUser } from "./authService";
+import { apiFetch, getApiErrorMessage } from "./api";
+import { getMe, getUser } from "./authService";
 
 export type Restaurant = {
   id: string;
@@ -18,32 +18,87 @@ export type Restaurant = {
   updated_at: string;
 };
 
+type CreateRestaurantData = {
+  owner_user_id: string;
+  name: string;
+  slug: string;
+  description?: string;
+};
+
+type UpdateRestaurantData = {
+  name?: string;
+  slug?: string;
+  description?: string | null;
+  logo_url?: string | null;
+  whatsapp?: string | null;
+  phone?: string | null;
+  address?: string | null;
+  opening_hours?: string | null;
+};
+
 export async function getRestaurants(): Promise<Restaurant[]> {
-  const response = await fetch(`${API_URL}/restaurants`, {
-    headers: {
-      ...getAuthHeaders(),
-    },
+  const response = await apiFetch("/restaurants", {
+    method: "GET",
   });
 
   if (!response.ok) {
-    throw new Error("Erro ao buscar restaurantes");
+    throw new Error(
+      await getApiErrorMessage(response, "Erro ao buscar restaurantes"),
+    );
   }
 
   return response.json();
 }
 
 export async function getMyRestaurants() {
-  const user = getUser();
+  let user = getUser();
 
-  console.log("USER:", user);
+  if (!user) {
+    user = await getMe();
+  }
 
   const restaurants = await getRestaurants();
 
-  console.log("RESTAURANTS:", restaurants);
+  if (user.role === "MASTER") {
+    return restaurants;
+  }
 
   return restaurants.filter(
     (restaurant) => restaurant.owner_user_id === user.id,
   );
+}
+
+export async function createRestaurant(data: CreateRestaurantData) {
+  const response = await apiFetch("/restaurants", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      await getApiErrorMessage(response, "Erro ao criar restaurante"),
+    );
+  }
+
+  return response.json();
+}
+
+export async function updateRestaurant(
+  id: string,
+  data: UpdateRestaurantData,
+): Promise<Restaurant> {
+  const response = await apiFetch(`/restaurants/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      await getApiErrorMessage(response, "Erro ao atualizar restaurante"),
+    );
+  }
+
+  return response.json();
 }
 
 export function saveSelectedRestaurant(restaurant: Restaurant) {
@@ -63,61 +118,4 @@ export function getSelectedRestaurant(): Restaurant | null {
 
 export function clearSelectedRestaurant() {
   localStorage.removeItem("menuflow_selected_restaurant");
-}
-
-
-type CreateRestaurantData = {
-  owner_user_id: string;
-  name: string;
-  slug: string;
-  description?: string;
-};
-
-export async function createRestaurant(data: CreateRestaurantData) {
-  const response = await fetch(`${API_URL}/restaurants`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...getAuthHeaders(),
-    },
-    body: JSON.stringify(data),
-  });
-
-  if (!response.ok) {
-    throw new Error("Erro ao criar restaurante");
-  }
-
-  return response.json();
-}
-
-
-type UpdateRestaurantData = {
-  name?: string;
-  slug?: string;
-  description?: string | null;
-  logo_url?: string | null;
-  whatsapp?: string | null;
-  phone?: string | null;
-  address?: string | null;
-  opening_hours?: string | null;
-};
-
-export async function updateRestaurant(
-  id: string,
-  data: UpdateRestaurantData,
-): Promise<Restaurant> {
-  const response = await fetch(`${API_URL}/restaurants/${id}`, {
-    method: "PATCH",
-    headers: {
-      "Content-Type": "application/json",
-      ...getAuthHeaders(),
-    },
-    body: JSON.stringify(data),
-  });
-
-  if (!response.ok) {
-    throw new Error("Erro ao atualizar restaurante");
-  }
-
-  return response.json();
 }

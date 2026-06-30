@@ -8,9 +8,9 @@ import DashboardCard from "./_components/dashboardCard";
 import SetupSteps from "./_components/setupSteps";
 import RecentProducts from "./_components/recentProducts";
 import ProductModal from "./_components/productModal";
-import type { ProductTableItem } from "@/components/ProductTable";
 
 import ConfirmDialog from "@/components/ConfirmDialog";
+import type { ProductTableItem } from "@/components/ProductTable";
 
 import { CircleCheck, Folder, ShoppingBag } from "lucide-react";
 
@@ -77,32 +77,6 @@ export default function AdminPage() {
     }
   }
 
-  async function handleToggleProduct(product: ProductTableItem) {
-    if (!restaurant) return;
-
-    try {
-      if (product.is_active) {
-        await disableProduct(product.id);
-
-        setActionTitle("Produto inativado");
-        setActionDescription("O produto foi inativado com sucesso.");
-      } else {
-        await activateProduct(product.id);
-
-        setActionTitle("Produto ativado");
-        setActionDescription("O produto foi ativado com sucesso.");
-      }
-
-      await reloadDashboardData();
-
-      setActionType("success");
-      setOpenActionDialog(true);
-    } catch (error) {
-      console.error(error);
-      alert("Erro ao alterar status do produto");
-    }
-  }
-
   async function loadCategories(restaurantId: string) {
     try {
       const data = await getCategories(restaurantId);
@@ -138,12 +112,38 @@ export default function AdminPage() {
     ]);
   }
 
-  function handleEditProduct(product: RecentProduct) {
+  async function handleToggleProduct(product: ProductTableItem) {
+    if (!restaurant) return;
+
+    try {
+      if (product.is_active) {
+        await disableProduct(product.id);
+
+        setActionTitle("Produto inativado");
+        setActionDescription("O produto foi inativado com sucesso.");
+      } else {
+        await activateProduct(product.id);
+
+        setActionTitle("Produto ativado");
+        setActionDescription("O produto foi ativado com sucesso.");
+      }
+
+      await reloadDashboardData();
+
+      setActionType("success");
+      setOpenActionDialog(true);
+    } catch (error) {
+      console.error(error);
+      alert("Erro ao alterar status do produto");
+    }
+  }
+
+  function handleEditProduct(product: ProductTableItem) {
     setSelectedProduct(product as unknown as Product);
     setOpenProductModal(true);
   }
 
-  function handleOpenDeleteProduct(product: RecentProduct) {
+  function handleOpenDeleteProduct(product: ProductTableItem) {
     setSelectedProduct(product as unknown as Product);
     setOpenDeleteModal(true);
   }
@@ -219,12 +219,21 @@ export default function AdminPage() {
 
       <ConfirmDialog
         open={openDeleteModal}
+        type="danger"
         title="Excluir produto"
         description={`Tem certeza que deseja excluir o produto "${selectedProduct?.name}"? Essa ação não poderá ser desfeita.`}
         confirmText="Excluir"
         loading={deleteLoading}
         onOpenChange={setOpenDeleteModal}
         onConfirm={confirmDeleteProduct}
+      />
+
+      <ConfirmDialog
+        open={openActionDialog}
+        type={actionType}
+        title={actionTitle}
+        description={actionDescription}
+        onOpenChange={setOpenActionDialog}
       />
 
       <section className="ml-64 p-6">
@@ -271,6 +280,7 @@ export default function AdminPage() {
         </div>
 
         <SetupSteps />
+
         <RecentProducts
           products={recentProducts}
           loading={loadingRecentProducts}

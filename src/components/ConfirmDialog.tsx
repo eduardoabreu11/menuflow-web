@@ -10,11 +10,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 
-import {
-  CheckCircle2,
-  AlertTriangle,
-  Trash2,
-} from "lucide-react";
+import { CheckCircle2, Trash2 } from "lucide-react";
 
 type ActionDialogProps = {
   open: boolean;
@@ -24,8 +20,10 @@ type ActionDialogProps = {
   description: string;
 
   type?: "success" | "danger";
+  confirmText?: string;
+  loading?: boolean;
 
-  onConfirm?: () => void;
+  onConfirm?: () => void | Promise<void>;
 };
 
 export default function ActionDialog({
@@ -34,6 +32,8 @@ export default function ActionDialog({
   title,
   description,
   type = "success",
+  confirmText = "Confirmar",
+  loading = false,
   onConfirm,
 }: ActionDialogProps) {
   const isDanger = type === "danger";
@@ -42,7 +42,7 @@ export default function ActionDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <div className="flex justify-center mb-4">
+          <div className="mb-4 flex justify-center">
             {isDanger ? (
               <Trash2 className="h-16 w-16 text-red-500" />
             ) : (
@@ -50,29 +50,23 @@ export default function ActionDialog({
             )}
           </div>
 
-          <DialogTitle className="text-center">
-            {title}
-          </DialogTitle>
+          <DialogTitle className="text-center">{title}</DialogTitle>
         </DialogHeader>
 
-        <p className="text-center text-muted-foreground">
-          {description}
-        </p>
+        <p className="text-center text-muted-foreground">{description}</p>
 
         {isDanger && (
           <DialogFooter>
             <Button
               variant="outline"
+              disabled={loading}
               onClick={() => onOpenChange(false)}
             >
               Cancelar
             </Button>
 
-            <Button
-              variant="destructive"
-              onClick={onConfirm}
-            >
-              Excluir
+            <Button variant="destructive" disabled={loading} onClick={onConfirm}>
+              {loading ? "Carregando..." : confirmText}
             </Button>
           </DialogFooter>
         )}
