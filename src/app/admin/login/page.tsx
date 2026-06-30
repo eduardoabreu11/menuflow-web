@@ -3,7 +3,7 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { login, saveAuth } from "@/services/authService";
+import { login } from "@/services/authService";
 
 import {
   getMyRestaurants,
@@ -27,8 +27,6 @@ export default function LoginPage() {
         email,
         password,
       });
-
-      saveAuth(data);
 
       if (data.user.role === "MASTER") {
         router.push("/master");
