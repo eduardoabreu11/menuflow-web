@@ -3,7 +3,7 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { login } from "@/services/authService";
+import { useAuth } from "@/context/AuthContext";
 
 import {
   getMyRestaurants,
@@ -12,6 +12,7 @@ import {
 
 export default function LoginPage() {
   const router = useRouter();
+  const { signIn } = useAuth();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -23,12 +24,12 @@ export default function LoginPage() {
     try {
       setLoading(true);
 
-      const data = await login({
+      const user = await signIn({
         email,
         password,
       });
 
-      if (data.user.role === "MASTER") {
+      if (user.role === "MASTER") {
         router.push("/master");
         return;
       }
