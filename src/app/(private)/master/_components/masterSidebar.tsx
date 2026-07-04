@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+
 import {
   CreditCard,
   LayoutDashboard,
@@ -11,6 +12,8 @@ import {
   Wallet,
   UtensilsCrossed,
 } from "lucide-react";
+
+import { useLogout } from "@/hooks/useLogout";
 
 const menuItems = [
   {
@@ -42,6 +45,7 @@ const menuItems = [
 
 export function MasterSidebar() {
   const pathname = usePathname();
+  const { loading: logoutLoading, handleLogout } = useLogout();
 
   return (
     <aside className="fixed left-0 top-0 h-screen w-64 border-r border-border bg-card">
@@ -51,13 +55,9 @@ export function MasterSidebar() {
         </div>
 
         <div>
-          <h1 className="font-semibold text-foreground">
-            MenuFlow
-          </h1>
+          <h1 className="font-semibold text-foreground">MenuFlow</h1>
 
-          <p className="text-xs text-muted-foreground">
-            Painel Master
-          </p>
+          <p className="text-xs text-muted-foreground">Painel Master</p>
         </div>
       </div>
 
@@ -102,13 +102,15 @@ export function MasterSidebar() {
             Sistema
           </p>
 
-          <Link
-            href="/login"
-            className="flex items-center gap-3 rounded-lg px-4 py-3 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          <button
+            type="button"
+            onClick={handleLogout}
+            disabled={logoutLoading}
+            className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
           >
             <LogOut size={18} />
-            Sair
-          </Link>
+            {logoutLoading ? "Saindo..." : "Sair"}
+          </button>
         </div>
       </nav>
     </aside>

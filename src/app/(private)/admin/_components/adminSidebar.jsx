@@ -16,6 +16,8 @@ import {
   ExternalLink,
 } from "lucide-react";
 
+import { useLogout } from "@/hooks/useLogout";
+
 const menuItems = [
   {
     label: "Dashboard",
@@ -56,6 +58,7 @@ const menuItems = [
 
 export default function AdminSidebar() {
   const pathname = usePathname();
+  const { loading: logoutLoading, handleLogout } = useLogout();
 
   return (
     <aside className="fixed left-0 top-0 flex h-screen w-64 flex-col border-r border-sidebar-border bg-sidebar px-4 py-6">
@@ -104,10 +107,7 @@ export default function AdminSidebar() {
       <div className="space-y-3">
         <div className="rounded-xl border border-sidebar-border bg-sidebar-accent p-4">
           <div className="mb-2 flex items-center gap-2">
-            <ExternalLink
-              size={14}
-              className="text-muted-foreground"
-            />
+            <ExternalLink size={14} className="text-muted-foreground" />
 
             <span className="text-xs font-medium text-sidebar-foreground">
               Seu cardápio online
@@ -120,21 +120,21 @@ export default function AdminSidebar() {
             rel="noopener noreferrer"
             className="flex items-center justify-between gap-2 text-xs text-primary hover:underline"
           >
-            <span className="truncate">
-              menuflow.com/pizzaria-do-joao
-            </span>
+            <span className="truncate">menuflow.com/pizzaria-do-joao</span>
 
             <ExternalLink size={14} />
           </a>
         </div>
 
-        <Link
-          href="/login"
-          className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-muted-foreground transition hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+        <button
+          type="button"
+          onClick={handleLogout}
+          disabled={logoutLoading}
+          className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-muted-foreground transition hover:bg-sidebar-accent hover:text-sidebar-accent-foreground disabled:cursor-not-allowed disabled:opacity-60"
         >
           <LogOut size={18} />
-          Sair
-        </Link>
+          {logoutLoading ? "Saindo..." : "Sair"}
+        </button>
       </div>
     </aside>
   );

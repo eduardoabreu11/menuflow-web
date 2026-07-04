@@ -69,13 +69,16 @@ export async function getMe(): Promise<AuthUser> {
 
   return user;
 }
-
 export async function logout() {
-  await apiFetch("/logout", {
+  const response = await apiFetch("/logout", {
     method: "POST",
   });
 
   clearAuth();
+
+  if (!response.ok) {
+    throw new Error(await getApiErrorMessage(response, "Erro ao sair da conta"));
+  }
 }
 
 export function getUser(): AuthUser | null {
