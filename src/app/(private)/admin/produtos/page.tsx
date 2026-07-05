@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { ChevronLeft, ChevronRight, Plus, Search } from "lucide-react";
@@ -66,6 +66,28 @@ export default function ProductsPage() {
   const [categoryFilter, setCategoryFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState("ALL");
 
+  const restaurantIsBlocked = restaurant?.status === "BLOCKED";
+
+  const filteredProducts = useMemo(() => {
+    const normalizedSearch = search.trim().toLowerCase();
+
+    return products.filter((product) => {
+      const matchesSearch =
+        !normalizedSearch ||
+        product.name.toLowerCase().includes(normalizedSearch);
+
+      const matchesCategory =
+        categoryFilter === "ALL" || product.category_id === categoryFilter;
+
+      const matchesStatus =
+        statusFilter === "ALL" ||
+        (statusFilter === "ACTIVE" && product.is_active) ||
+        (statusFilter === "INACTIVE" && !product.is_active);
+
+      return matchesSearch && matchesCategory && matchesStatus;
+    });
+  }, [products, search, categoryFilter, statusFilter]);
+
   async function loadProducts(restaurantId: string) {
     try {
       setLoading(true);
@@ -75,6 +97,12 @@ export default function ProductsPage() {
       setProducts(data);
     } catch (error) {
       console.error(error);
+
+      if (error instanceof Error) {
+        alert(error.message);
+        return;
+      }
+
       alert("Erro ao carregar produtos");
     } finally {
       setLoading(false);
@@ -88,6 +116,12 @@ export default function ProductsPage() {
       setCategories(data);
     } catch (error) {
       console.error(error);
+
+      if (error instanceof Error) {
+        alert(error.message);
+        return;
+      }
+
       alert("Erro ao carregar categorias");
     }
   }
@@ -128,36 +162,35 @@ export default function ProductsPage() {
     });
   }
 
-  const filteredProducts = products.filter((product) => {
-    const matchesSearch = product.name
-      .toLowerCase()
-      .includes(search.toLowerCase());
-
-    const matchesCategory =
-      categoryFilter === "ALL" || product.category_id === categoryFilter;
-
-    const matchesStatus =
-      statusFilter === "ALL" ||
-      (statusFilter === "ACTIVE" && product.is_active) ||
-      (statusFilter === "INACTIVE" && !product.is_active);
-
-    return matchesSearch && matchesCategory && matchesStatus;
-  });
-
   function handleCreateProduct() {
+    if (restaurantIsBlocked) {
+      alert("Restaurante bloqueado. Não é possível criar produtos.");
+      return;
+    }
+
     setModalMode("create");
     setSelectedProduct(null);
     setOpenProductModal(true);
   }
 
   function handleEditProduct(product: ProductTableItem) {
+    if (restaurantIsBlocked) {
+      alert("Restaurante bloqueado. Não é possível editar produtos.");
+      return;
+    }
+
     setModalMode("edit");
-    setSelectedProduct(product as Product);
+    setSelectedProduct(product as unknown as Product);
     setOpenProductModal(true);
   }
 
   async function handleToggleProduct(product: ProductTableItem) {
     if (!restaurant) return;
+
+    if (restaurantIsBlocked) {
+      alert("Restaurante bloqueado. Não é possível alterar produtos.");
+      return;
+    }
 
     try {
       if (product.is_active) {
@@ -178,12 +211,23 @@ export default function ProductsPage() {
       setOpenActionDialog(true);
     } catch (error) {
       console.error(error);
+
+      if (error instanceof Error) {
+        alert(error.message);
+        return;
+      }
+
       alert("Erro ao alterar status do produto");
     }
   }
 
   function handleOpenDeleteModal(product: ProductTableItem) {
-    setSelectedProduct(product as Product);
+    if (restaurantIsBlocked) {
+      alert("Restaurante bloqueado. Não é possível excluir produtos.");
+      return;
+    }
+
+    setSelectedProduct(product as unknown as Product);
     setOpenDeleteModal(true);
   }
 
@@ -206,6 +250,12 @@ export default function ProductsPage() {
       setSelectedProduct(null);
     } catch (error) {
       console.error(error);
+
+      if (error instanceof Error) {
+        alert(error.message);
+        return;
+      }
+
       alert("Erro ao excluir produto");
     } finally {
       setDeleteLoading(false);
@@ -266,6 +316,8 @@ export default function ProductsPage() {
         title="Excluir produto"
         description={`Tem certeza que deseja excluir o produto "${selectedProduct?.name}"? Essa ação não poderá ser desfeita.`}
         type="danger"
+        confirmText="Excluir"
+        loading={deleteLoading}
         onConfirm={confirmDeleteProduct}
       />
 
@@ -285,11 +337,20 @@ export default function ProductsPage() {
             <p className="mt-2 text-sm text-muted-foreground">
               Gerencie os produtos de {restaurant.name}.
             </p>
+
+            {restaurantIsBlocked && (
+              <p className="mt-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-700">
+                Este restaurante está bloqueado. Você pode visualizar os
+                produtos, mas não pode criar, editar, ativar, desativar ou
+                excluir.
+              </p>
+            )}
           </div>
 
           <Button
             onClick={handleCreateProduct}
-            className="h-11 rounded-xl bg-primary px-5 text-primary-foreground hover:opacity-90"
+            disabled={restaurantIsBlocked}
+            className="h-11 rounded-xl bg-primary px-5 text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Plus size={18} />
             Novo produto

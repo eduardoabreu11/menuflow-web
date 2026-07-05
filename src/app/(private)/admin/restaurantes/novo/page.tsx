@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { getUser } from "@/services/authService";
+import { useAuth } from "@/context/AuthContext";
+
 import {
   createRestaurant,
   saveSelectedRestaurant,
@@ -11,6 +12,7 @@ import {
 
 export default function NewRestaurantPage() {
   const router = useRouter();
+  const { user } = useAuth();
 
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
@@ -31,11 +33,9 @@ export default function NewRestaurantPage() {
     event.preventDefault();
 
     try {
-      const user = getUser();
-
       if (!user) {
         alert("Usuário não autenticado");
-        router.push("/login");
+        router.push("/admin/login");
         return;
       }
 
@@ -63,6 +63,12 @@ export default function NewRestaurantPage() {
       router.push("/admin");
     } catch (error) {
       console.error(error);
+
+      if (error instanceof Error) {
+        alert(error.message);
+        return;
+      }
+
       alert("Erro ao criar restaurante");
     } finally {
       setLoading(false);

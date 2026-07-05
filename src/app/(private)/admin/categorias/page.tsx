@@ -1,15 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import {
   ChevronLeft,
   ChevronRight,
-  Edit,
   Plus,
   Search,
-  Trash2,
 } from "lucide-react";
 
 import AdminSidebar from "../_components/adminSidebar";
@@ -20,7 +18,6 @@ import CategoryTable from "@/components/CategoryTable";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
 
 import {
   activateCategory,
@@ -54,7 +51,23 @@ export default function CategoriesPage() {
   const [actionType, setActionType] = useState<"success" | "danger">("success");
 
   const [categories, setCategories] = useState<Category[]>([]);
+  const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  const filteredCategories = useMemo(() => {
+    const normalizedSearch = search.trim().toLowerCase();
+
+    if (!normalizedSearch) {
+      return categories;
+    }
+
+    return categories.filter((category) =>
+      category.name.toLowerCase().includes(normalizedSearch),
+    );
+  }, [categories, search]);
+
+  const restaurantIsBlocked = restaurant?.status === "BLOCKED";
 
   async function loadCategories(restaurantId: string) {
     try {
@@ -65,6 +78,12 @@ export default function CategoriesPage() {
       setCategories(data);
     } catch (error) {
       console.error(error);
+
+      if (error instanceof Error) {
+        alert(error.message);
+        return;
+      }
+
       alert("Erro ao carregar categorias");
     } finally {
       setLoading(false);
@@ -95,6 +114,11 @@ export default function CategoriesPage() {
   async function handleToggleCategory(category: Category) {
     if (!restaurant) return;
 
+    if (restaurantIsBlocked) {
+      alert("Restaurante bloqueado. Não é possível alterar categorias.");
+      return;
+    }
+
     try {
       if (category.is_active) {
         await disableCategory(category.id);
@@ -114,11 +138,44 @@ export default function CategoriesPage() {
       setOpenActionDialog(true);
     } catch (error) {
       console.error(error);
+
+      if (error instanceof Error) {
+        alert(error.message);
+        return;
+      }
+
       alert("Erro ao alterar status da categoria");
     }
   }
 
+  function handleOpenCreateModal() {
+    if (restaurantIsBlocked) {
+      alert("Restaurante bloqueado. Não é possível criar categorias.");
+      return;
+    }
+
+    setModalMode("create");
+    setSelectedCategory(null);
+    setOpenCategoryModal(true);
+  }
+
+  function handleOpenEditModal(category: Category) {
+    if (restaurantIsBlocked) {
+      alert("Restaurante bloqueado. Não é possível editar categorias.");
+      return;
+    }
+
+    setModalMode("edit");
+    setSelectedCategory(category);
+    setOpenCategoryModal(true);
+  }
+
   function handleOpenDeleteModal(category: Category) {
+    if (restaurantIsBlocked) {
+      alert("Restaurante bloqueado. Não é possível excluir categorias.");
+      return;
+    }
+
     setSelectedCategory(category);
     setOpenDeleteModal(true);
   }
@@ -127,6 +184,8 @@ export default function CategoriesPage() {
     if (!selectedCategory || !restaurant) return;
 
     try {
+      setDeleteLoading(true);
+
       await deleteCategory(selectedCategory.id);
       await loadCategories(restaurant.id);
 
@@ -140,7 +199,15 @@ export default function CategoriesPage() {
       setSelectedCategory(null);
     } catch (error) {
       console.error(error);
+
+      if (error instanceof Error) {
+        alert(error.message);
+        return;
+      }
+
       alert("Erro ao excluir categoria");
+    } finally {
+      setDeleteLoading(false);
     }
   }
 
@@ -194,6 +261,8 @@ export default function CategoriesPage() {
         title="Excluir categoria"
         description={`Tem certeza que deseja excluir a categoria "${selectedCategory?.name}"? Essa ação não poderá ser desfeita.`}
         type="danger"
+        confirmText="Excluir"
+        loading={deleteLoading}
         onConfirm={confirmDeleteCategory}
       />
 
@@ -213,15 +282,20 @@ export default function CategoriesPage() {
             <p className="mt-2 text-sm text-muted-foreground">
               Organize o cardápio de {restaurant.name}.
             </p>
+
+            {restaurantIsBlocked && (
+              <p className="mt-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-700">
+                Este restaurante está bloqueado. Você pode visualizar as
+                categorias, mas não pode criar, editar, ativar, desativar ou
+                excluir.
+              </p>
+            )}
           </div>
 
           <Button
-            onClick={() => {
-              setModalMode("create");
-              setSelectedCategory(null);
-              setOpenCategoryModal(true);
-            }}
-            className="h-11 rounded-xl bg-primary px-5 text-primary-foreground hover:opacity-90"
+            onClick={handleOpenCreateModal}
+            disabled={restaurantIsBlocked}
+            className="h-11 rounded-xl bg-primary px-5 text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Plus size={18} />
             Nova categoria
@@ -236,6 +310,8 @@ export default function CategoriesPage() {
             />
 
             <Input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
               placeholder="Buscar categoria..."
               className="h-11 rounded-xl border-border bg-card pr-10 text-foreground placeholder:text-muted-foreground"
             />
@@ -243,19 +319,17 @@ export default function CategoriesPage() {
         </div>
 
         <CategoryTable
-          categories={categories}
+          categories={filteredCategories}
           loading={loading}
-          onEdit={(category) => {
-            setModalMode("edit");
-            setSelectedCategory(category);
-            setOpenCategoryModal(true);
-          }}
+          onEdit={handleOpenEditModal}
           onDelete={handleOpenDeleteModal}
           onToggle={handleToggleCategory}
         />
+
         <footer className="mt-6 flex items-center justify-between text-sm text-muted-foreground">
           <p>
-            Mostrando {categories.length} de {categories.length} categorias
+            Mostrando {filteredCategories.length} de {categories.length}{" "}
+            categorias
           </p>
 
           <div className="flex items-center gap-2">

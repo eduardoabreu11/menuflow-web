@@ -16,26 +16,35 @@ export default function SelectRestaurantPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let isMounted = true;
+
     async function loadRestaurants() {
       try {
         const data = await getMyRestaurants();
 
-        if (data.length === 1) {
-          saveSelectedRestaurant(data[0]);
-          router.push("/admin");
+        if (data.length === 0) {
+          router.replace("/admin/restaurantes/novo");
           return;
         }
 
-        setRestaurants(data);
+        if (isMounted) {
+          setRestaurants(data);
+        }
       } catch (error) {
         console.error(error);
         alert("Erro ao carregar restaurantes");
       } finally {
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     }
 
     loadRestaurants();
+
+    return () => {
+      isMounted = false;
+    };
   }, [router]);
 
   function handleSelectRestaurant(restaurant: Restaurant) {
@@ -59,12 +68,13 @@ export default function SelectRestaurantPage() {
 
           <button
             type="button"
-            onClick={() => router.push("/master/restaurantes")}
+            onClick={() => router.push("/admin/restaurantes/novo")}
             className="rounded-xl bg-violet-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-violet-700"
           >
             Inserir restaurante
           </button>
         </div>
+
         {loading && (
           <p className="text-sm text-zinc-500">Carregando restaurantes...</p>
         )}
@@ -96,8 +106,14 @@ export default function SelectRestaurantPage() {
                 </p>
               </div>
 
-              <span className="rounded-full bg-violet-100 px-3 py-1 text-xs font-semibold text-violet-700">
-                {restaurant.status}
+              <span
+                className={
+                  restaurant.status === "ACTIVE"
+                    ? "rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700"
+                    : "rounded-full bg-red-100 px-3 py-1 text-xs font-semibold text-red-700"
+                }
+              >
+                {restaurant.status === "ACTIVE" ? "Ativo" : "Bloqueado"}
               </span>
             </button>
           ))}

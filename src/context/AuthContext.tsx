@@ -17,6 +17,8 @@ import {
   type AuthUser,
 } from "@/services/authService";
 
+import { clearSelectedRestaurant } from "@/services/restaurantService";
+
 type LoginData = {
   email: string;
   password: string;
@@ -48,21 +50,26 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setUser(me);
     } catch {
       setUser(null);
+      clearSelectedRestaurant();
     }
   }, []);
 
   async function signIn(data: LoginData) {
     const result = await loginRequest(data);
 
+    clearSelectedRestaurant();
     setUser(result.user);
 
     return result.user;
   }
 
   async function signOut() {
-    await logoutRequest();
-
-    setUser(null);
+    try {
+      await logoutRequest();
+    } finally {
+      clearSelectedRestaurant();
+      setUser(null);
+    }
   }
 
   useEffect(() => {
@@ -78,6 +85,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       } catch {
         if (isMounted) {
           setUser(null);
+          clearSelectedRestaurant();
         }
       } finally {
         if (isMounted) {

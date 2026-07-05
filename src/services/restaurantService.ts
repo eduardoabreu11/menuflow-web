@@ -1,5 +1,4 @@
 import { apiFetch, getApiErrorMessage } from "./api";
-import { getMe, getUser } from "./authService";
 
 export type Restaurant = {
   id: string;
@@ -19,7 +18,7 @@ export type Restaurant = {
 };
 
 type CreateRestaurantData = {
-  owner_user_id: string;
+  owner_user_id?: string;
   name: string;
   slug: string;
   description?: string;
@@ -36,6 +35,8 @@ type UpdateRestaurantData = {
   opening_hours?: string | null;
 };
 
+const SELECTED_RESTAURANT_KEY = "menuflow_selected_restaurant";
+
 export async function getRestaurants(): Promise<Restaurant[]> {
   const response = await apiFetch("/restaurants", {
     method: "GET",
@@ -50,22 +51,8 @@ export async function getRestaurants(): Promise<Restaurant[]> {
   return response.json();
 }
 
-export async function getMyRestaurants() {
-  let user = getUser();
-
-  if (!user) {
-    user = await getMe();
-  }
-
-  const restaurants = await getRestaurants();
-
-  if (user.role === "MASTER") {
-    return restaurants;
-  }
-
-  return restaurants.filter(
-    (restaurant) => restaurant.owner_user_id === user.id,
-  );
+export async function getMyRestaurants(): Promise<Restaurant[]> {
+  return getRestaurants();
 }
 
 export async function createRestaurant(data: CreateRestaurantData) {
@@ -102,20 +89,31 @@ export async function updateRestaurant(
 }
 
 export function saveSelectedRestaurant(restaurant: Restaurant) {
+  if (typeof window === "undefined") return;
+
   localStorage.setItem(
-    "menuflow_selected_restaurant",
+    SELECTED_RESTAURANT_KEY,
     JSON.stringify(restaurant),
   );
 }
 
 export function getSelectedRestaurant(): Restaurant | null {
-  const restaurant = localStorage.getItem("menuflow_selected_restaurant");
+  if (typeof window === "undefined") return null;
+
+  const restaurant = localStorage.getItem(SELECTED_RESTAURANT_KEY);
 
   if (!restaurant) return null;
 
-  return JSON.parse(restaurant);
+  try {
+    return JSON.parse(restaurant);
+  } catch {
+    clearSelectedRestaurant();
+    return null;
+  }
 }
 
 export function clearSelectedRestaurant() {
-  localStorage.removeItem("menuflow_selected_restaurant");
+  if (typeof window === "undefined") return;
+
+  localStorage.removeItem(SELECTED_RESTAURANT_KEY);
 }
