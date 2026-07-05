@@ -9,6 +9,7 @@ import {
   LogOut,
   Settings,
   Store,
+  Users,
   Wallet,
   UtensilsCrossed,
 } from "lucide-react";
@@ -25,6 +26,11 @@ const menuItems = [
     label: "Restaurantes",
     href: "/master/restaurantes",
     icon: Store,
+  },
+  {
+    label: "Usuários",
+    href: "/master/usuarios",
+    icon: Users,
   },
   {
     label: "Planos",

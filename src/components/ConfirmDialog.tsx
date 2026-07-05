@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 
 import { CheckCircle2, Trash2 } from "lucide-react";
 
-type ActionDialogProps = {
+type ConfirmDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 
@@ -26,7 +26,7 @@ type ActionDialogProps = {
   onConfirm?: () => void | Promise<void>;
 };
 
-export default function ActionDialog({
+export default function ConfirmDialog({
   open,
   onOpenChange,
   title,
@@ -35,8 +35,18 @@ export default function ActionDialog({
   confirmText = "Confirmar",
   loading = false,
   onConfirm,
-}: ActionDialogProps) {
+}: ConfirmDialogProps) {
   const isDanger = type === "danger";
+  const hasConfirmAction = Boolean(onConfirm);
+
+  async function handleConfirm() {
+    if (!onConfirm) {
+      onOpenChange(false);
+      return;
+    }
+
+    await onConfirm();
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -55,21 +65,35 @@ export default function ActionDialog({
 
         <p className="text-center text-muted-foreground">{description}</p>
 
-        {isDanger && (
-          <DialogFooter>
+        <DialogFooter className="mt-6">
+          {hasConfirmAction ? (
+            <>
+              <Button
+                variant="outline"
+                disabled={loading}
+                onClick={() => onOpenChange(false)}
+              >
+                Cancelar
+              </Button>
+
+              <Button
+                variant={isDanger ? "destructive" : "default"}
+                disabled={loading}
+                onClick={handleConfirm}
+              >
+                {loading ? "Carregando..." : confirmText}
+              </Button>
+            </>
+          ) : (
             <Button
-              variant="outline"
               disabled={loading}
               onClick={() => onOpenChange(false)}
+              className="w-full"
             >
-              Cancelar
+              Fechar
             </Button>
-
-            <Button variant="destructive" disabled={loading} onClick={onConfirm}>
-              {loading ? "Carregando..." : confirmText}
-            </Button>
-          </DialogFooter>
-        )}
+          )}
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
