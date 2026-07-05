@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import {
   Clock,
@@ -40,6 +41,8 @@ import {
 } from "@/services/restaurantService";
 
 export default function MenuSettingsPage() {
+  const router = useRouter();
+
   const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
 
   const [name, setName] = useState("");
@@ -59,11 +62,14 @@ export default function MenuSettingsPage() {
   const [loadingContact, setLoadingContact] = useState(false);
   const [loadingBanners, setLoadingBanners] = useState(false);
   const [savingBanner, setSavingBanner] = useState(false);
+  const [deletingBanner, setDeletingBanner] = useState(false);
   const [deleteBannerOpen, setDeleteBannerOpen] = useState(false);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogTitle, setDialogTitle] = useState("");
   const [dialogDescription, setDialogDescription] = useState("");
+
+  const restaurantIsBlocked = restaurant?.status === "BLOCKED";
 
   async function loadBanners(restaurantId: string) {
     try {
@@ -74,17 +80,19 @@ export default function MenuSettingsPage() {
       setBanners(data);
     } catch (error) {
       console.error(error);
+
+      if (error instanceof Error) {
+        alert(error.message);
+        return;
+      }
+
       alert("Erro ao carregar banners");
     } finally {
       setLoadingBanners(false);
     }
   }
 
-  useEffect(() => {
-    const selectedRestaurant = getSelectedRestaurant();
-
-    if (!selectedRestaurant) return;
-
+  function fillRestaurantForm(selectedRestaurant: Restaurant) {
     setRestaurant(selectedRestaurant);
     setName(selectedRestaurant.name);
     setDescription(selectedRestaurant.description ?? "");
@@ -93,9 +101,21 @@ export default function MenuSettingsPage() {
     setPhone(selectedRestaurant.phone ?? "");
     setAddress(selectedRestaurant.address ?? "");
     setOpeningHours(selectedRestaurant.opening_hours ?? "");
+  }
 
-    loadBanners(selectedRestaurant.id);
-  }, []);
+  useEffect(() => {
+    const selectedRestaurant = getSelectedRestaurant();
+
+    if (!selectedRestaurant) {
+      router.push("/admin/restaurantes/selecionar");
+      return;
+    }
+
+    queueMicrotask(() => {
+      fillRestaurantForm(selectedRestaurant);
+      void loadBanners(selectedRestaurant.id);
+    });
+  }, [router]);
 
   function openSuccessDialog(title: string, description: string) {
     setDialogTitle(title);
@@ -103,21 +123,46 @@ export default function MenuSettingsPage() {
     setDialogOpen(true);
   }
 
+  function getFullRestaurantPayload() {
+    if (!restaurant) {
+      throw new Error("Restaurante não selecionado");
+    }
+
+    return {
+      name: name.trim(),
+      slug: restaurant.slug,
+      description: description.trim() || null,
+      logo_url: logoUrl.trim() || null,
+      whatsapp: whatsapp.trim() || null,
+      phone: phone.trim() || null,
+      address: address.trim() || null,
+      opening_hours: openingHours.trim() || null,
+    };
+  }
+
   async function handleSaveRestaurantData() {
     if (!restaurant) return;
+
+    if (restaurantIsBlocked) {
+      alert("Restaurante bloqueado. Não é possível editar o cardápio.");
+      return;
+    }
+
+    if (!name.trim()) {
+      alert("Informe o nome do restaurante");
+      return;
+    }
 
     try {
       setLoadingRestaurant(true);
 
-      const updatedRestaurant = await updateRestaurant(restaurant.id, {
-        name,
-        slug: restaurant.slug,
-        description: description || null,
-        logo_url: logoUrl || null,
-      });
+      const updatedRestaurant = await updateRestaurant(
+        restaurant.id,
+        getFullRestaurantPayload(),
+      );
 
       saveSelectedRestaurant(updatedRestaurant);
-      setRestaurant(updatedRestaurant);
+      fillRestaurantForm(updatedRestaurant);
 
       openSuccessDialog(
         "Restaurante atualizado",
@@ -125,6 +170,12 @@ export default function MenuSettingsPage() {
       );
     } catch (error) {
       console.error(error);
+
+      if (error instanceof Error) {
+        alert(error.message);
+        return;
+      }
+
       alert("Erro ao salvar dados do restaurante");
     } finally {
       setLoadingRestaurant(false);
@@ -134,20 +185,28 @@ export default function MenuSettingsPage() {
   async function handleSaveContactData() {
     if (!restaurant) return;
 
+    if (restaurantIsBlocked) {
+      alert(
+        "Restaurante bloqueado. Não é possível editar contato e localização.",
+      );
+      return;
+    }
+
+    if (!name.trim()) {
+      alert("Informe o nome do restaurante");
+      return;
+    }
+
     try {
       setLoadingContact(true);
 
-      const updatedRestaurant = await updateRestaurant(restaurant.id, {
-        name: restaurant.name,
-        slug: restaurant.slug,
-        whatsapp: whatsapp || null,
-        phone: phone || null,
-        address: address || null,
-        opening_hours: openingHours || null,
-      });
+      const updatedRestaurant = await updateRestaurant(
+        restaurant.id,
+        getFullRestaurantPayload(),
+      );
 
       saveSelectedRestaurant(updatedRestaurant);
-      setRestaurant(updatedRestaurant);
+      fillRestaurantForm(updatedRestaurant);
 
       openSuccessDialog(
         "Contato atualizado",
@@ -155,6 +214,12 @@ export default function MenuSettingsPage() {
       );
     } catch (error) {
       console.error(error);
+
+      if (error instanceof Error) {
+        alert(error.message);
+        return;
+      }
+
       alert("Erro ao salvar contato e localização");
     } finally {
       setLoadingContact(false);
@@ -163,6 +228,11 @@ export default function MenuSettingsPage() {
 
   async function handleSaveBanner() {
     if (!restaurant) return;
+
+    if (restaurantIsBlocked) {
+      alert("Restaurante bloqueado. Não é possível editar banners.");
+      return;
+    }
 
     if (!bannerImageUrl.trim()) {
       alert("Informe a URL da imagem do banner");
@@ -179,7 +249,7 @@ export default function MenuSettingsPage() {
 
       if (editingBannerId) {
         await updateBanner(editingBannerId, {
-          image_url: bannerImageUrl,
+          image_url: bannerImageUrl.trim(),
         });
 
         openSuccessDialog(
@@ -189,7 +259,7 @@ export default function MenuSettingsPage() {
       } else {
         await createBanner({
           restaurant_id: restaurant.id,
-          image_url: bannerImageUrl,
+          image_url: bannerImageUrl.trim(),
         });
 
         openSuccessDialog(
@@ -204,6 +274,12 @@ export default function MenuSettingsPage() {
       await loadBanners(restaurant.id);
     } catch (error) {
       console.error(error);
+
+      if (error instanceof Error) {
+        alert(error.message);
+        return;
+      }
+
       alert("Erro ao salvar banner");
     } finally {
       setSavingBanner(false);
@@ -211,6 +287,11 @@ export default function MenuSettingsPage() {
   }
 
   function handleEditBanner(banner: Banner) {
+    if (restaurantIsBlocked) {
+      alert("Restaurante bloqueado. Não é possível editar banners.");
+      return;
+    }
+
     setEditingBannerId(banner.id);
     setBannerImageUrl(banner.image_url);
   }
@@ -222,6 +303,11 @@ export default function MenuSettingsPage() {
 
   async function handleToggleBanner(banner: Banner) {
     if (!restaurant) return;
+
+    if (restaurantIsBlocked) {
+      alert("Restaurante bloqueado. Não é possível alterar banners.");
+      return;
+    }
 
     try {
       if (banner.is_active) {
@@ -243,11 +329,22 @@ export default function MenuSettingsPage() {
       await loadBanners(restaurant.id);
     } catch (error) {
       console.error(error);
+
+      if (error instanceof Error) {
+        alert(error.message);
+        return;
+      }
+
       alert("Erro ao alterar status do banner");
     }
   }
 
   function handleOpenDeleteBanner(banner: Banner) {
+    if (restaurantIsBlocked) {
+      alert("Restaurante bloqueado. Não é possível excluir banners.");
+      return;
+    }
+
     setSelectedBanner(banner);
     setDeleteBannerOpen(true);
   }
@@ -256,8 +353,9 @@ export default function MenuSettingsPage() {
     if (!restaurant || !selectedBanner) return;
 
     try {
-      await deleteBanner(selectedBanner.id);
+      setDeletingBanner(true);
 
+      await deleteBanner(selectedBanner.id);
       await loadBanners(restaurant.id);
 
       setDeleteBannerOpen(false);
@@ -269,7 +367,15 @@ export default function MenuSettingsPage() {
       );
     } catch (error) {
       console.error(error);
+
+      if (error instanceof Error) {
+        alert(error.message);
+        return;
+      }
+
       alert("Erro ao excluir banner");
+    } finally {
+      setDeletingBanner(false);
     }
   }
 
@@ -282,7 +388,7 @@ export default function MenuSettingsPage() {
           <h1 className="text-3xl font-bold text-foreground">Cardápio</h1>
 
           <p className="mt-2 text-muted-foreground">
-            Nenhum restaurante selecionado.
+            Carregando restaurante...
           </p>
         </section>
       </main>
@@ -301,6 +407,13 @@ export default function MenuSettingsPage() {
             Configure as informações que aparecem no cardápio público do seu
             restaurante.
           </p>
+
+          {restaurantIsBlocked && (
+            <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+              Este restaurante está bloqueado. Você pode visualizar as
+              informações, mas não pode editar dados, contato ou banners.
+            </p>
+          )}
         </div>
 
         <div className="space-y-6">
@@ -319,8 +432,9 @@ export default function MenuSettingsPage() {
 
                 <Input
                   value={name}
+                  disabled={restaurantIsBlocked}
                   onChange={(event) => setName(event.target.value)}
-                  className="mt-2 border-border bg-background text-foreground"
+                  className="mt-2 border-border bg-background text-foreground disabled:cursor-not-allowed disabled:opacity-60"
                 />
               </div>
 
@@ -329,8 +443,9 @@ export default function MenuSettingsPage() {
 
                 <Textarea
                   value={description}
+                  disabled={restaurantIsBlocked}
                   onChange={(event) => setDescription(event.target.value)}
-                  className="mt-2 h-[120px] resize-none border-border bg-background text-foreground"
+                  className="mt-2 h-[120px] resize-none border-border bg-background text-foreground disabled:cursor-not-allowed disabled:opacity-60"
                 />
               </div>
 
@@ -354,7 +469,8 @@ export default function MenuSettingsPage() {
                     <Button
                       type="button"
                       variant="outline"
-                      className="border-border bg-background text-foreground hover:bg-accent"
+                      disabled={restaurantIsBlocked}
+                      className="border-border bg-background text-foreground hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       <Upload size={16} />
                       Alterar logo
@@ -366,9 +482,10 @@ export default function MenuSettingsPage() {
 
                     <Input
                       value={logoUrl}
+                      disabled={restaurantIsBlocked}
                       onChange={(event) => setLogoUrl(event.target.value)}
                       placeholder="URL da logo"
-                      className="mt-3 border-border bg-background text-foreground"
+                      className="mt-3 border-border bg-background text-foreground disabled:cursor-not-allowed disabled:opacity-60"
                     />
                   </div>
                 </div>
@@ -376,8 +493,8 @@ export default function MenuSettingsPage() {
 
               <Button
                 onClick={handleSaveRestaurantData}
-                disabled={loadingRestaurant}
-                className="w-full bg-primary text-primary-foreground hover:opacity-90"
+                disabled={loadingRestaurant || restaurantIsBlocked}
+                className="w-full bg-primary text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Save size={16} />
                 {loadingRestaurant
@@ -409,15 +526,16 @@ export default function MenuSettingsPage() {
               <div className="mt-2 flex gap-3">
                 <Input
                   value={bannerImageUrl}
+                  disabled={restaurantIsBlocked}
                   onChange={(event) => setBannerImageUrl(event.target.value)}
                   placeholder="URL da imagem do banner"
-                  className="border-border bg-card text-foreground"
+                  className="border-border bg-card text-foreground disabled:cursor-not-allowed disabled:opacity-60"
                 />
 
                 <Button
                   onClick={handleSaveBanner}
-                  disabled={savingBanner}
-                  className="bg-primary text-primary-foreground hover:opacity-90"
+                  disabled={savingBanner || restaurantIsBlocked}
+                  className="bg-primary text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <Save size={16} />
                   {savingBanner
@@ -432,7 +550,8 @@ export default function MenuSettingsPage() {
                     type="button"
                     variant="outline"
                     onClick={handleCancelEditBanner}
-                    className="border-border bg-card text-foreground hover:bg-accent"
+                    disabled={savingBanner}
+                    className="border-border bg-card text-foreground hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     Cancelar
                   </Button>
@@ -501,8 +620,9 @@ export default function MenuSettingsPage() {
                         <Button
                           type="button"
                           variant="outline"
+                          disabled={restaurantIsBlocked}
                           onClick={() => handleEditBanner(banner)}
-                          className="border-border bg-card text-foreground hover:bg-accent"
+                          className="border-border bg-card text-foreground hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           <Upload size={16} />
                           Alterar imagem
@@ -511,8 +631,9 @@ export default function MenuSettingsPage() {
                         <Button
                           type="button"
                           variant="outline"
+                          disabled={restaurantIsBlocked}
                           onClick={() => handleOpenDeleteBanner(banner)}
-                          className="border-red-500/20 bg-red-500/10 text-red-500 hover:bg-red-500/20"
+                          className="border-red-500/20 bg-red-500/10 text-red-500 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           <Trash2 size={16} />
                           Excluir
@@ -524,6 +645,7 @@ export default function MenuSettingsPage() {
                   <div className="flex items-center gap-3">
                     <Switch
                       checked={banner.is_active}
+                      disabled={restaurantIsBlocked}
                       onCheckedChange={() => handleToggleBanner(banner)}
                     />
 
@@ -554,8 +676,9 @@ export default function MenuSettingsPage() {
 
                   <Input
                     value={whatsapp}
+                    disabled={restaurantIsBlocked}
                     onChange={(event) => setWhatsapp(event.target.value)}
-                    className="border-border bg-background pl-10 text-foreground"
+                    className="border-border bg-background pl-10 text-foreground disabled:cursor-not-allowed disabled:opacity-60"
                   />
                 </div>
               </div>
@@ -568,8 +691,9 @@ export default function MenuSettingsPage() {
 
                   <Input
                     value={phone}
+                    disabled={restaurantIsBlocked}
                     onChange={(event) => setPhone(event.target.value)}
-                    className="border-border bg-background pl-10 text-foreground"
+                    className="border-border bg-background pl-10 text-foreground disabled:cursor-not-allowed disabled:opacity-60"
                   />
                 </div>
               </div>
@@ -582,8 +706,9 @@ export default function MenuSettingsPage() {
 
                   <Input
                     value={address}
+                    disabled={restaurantIsBlocked}
                     onChange={(event) => setAddress(event.target.value)}
-                    className="border-border bg-background pl-10 text-foreground"
+                    className="border-border bg-background pl-10 text-foreground disabled:cursor-not-allowed disabled:opacity-60"
                   />
                 </div>
               </div>
@@ -596,16 +721,17 @@ export default function MenuSettingsPage() {
 
                   <Input
                     value={openingHours}
+                    disabled={restaurantIsBlocked}
                     onChange={(event) => setOpeningHours(event.target.value)}
-                    className="border-border bg-background pl-10 text-foreground"
+                    className="border-border bg-background pl-10 text-foreground disabled:cursor-not-allowed disabled:opacity-60"
                   />
                 </div>
               </div>
 
               <Button
                 onClick={handleSaveContactData}
-                disabled={loadingContact}
-                className="w-full bg-primary text-primary-foreground hover:opacity-90"
+                disabled={loadingContact || restaurantIsBlocked}
+                className="w-full bg-primary text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Save size={16} />
                 {loadingContact
@@ -623,6 +749,8 @@ export default function MenuSettingsPage() {
         title="Excluir banner"
         description="Tem certeza que deseja excluir este banner? Essa ação não poderá ser desfeita."
         type="danger"
+        confirmText="Excluir"
+        loading={deletingBanner}
         onConfirm={handleDeleteBanner}
       />
 
