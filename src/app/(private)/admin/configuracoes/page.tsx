@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 
 import {
   User,
@@ -19,8 +20,30 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+import { useAuth } from "@/context/AuthContext";
+
 export default function SettingsPage() {
+  const router = useRouter();
+
+  const { user, signOut } = useAuth();
+
   const [showPassword, setShowPassword] = useState(false);
+  const [logoutLoading, setLogoutLoading] = useState(false);
+
+  async function handleLogout() {
+    try {
+      setLogoutLoading(true);
+
+      await signOut();
+
+      router.push("/admin/login");
+    } catch (error) {
+      console.error(error);
+      alert("Erro ao encerrar sessão");
+    } finally {
+      setLogoutLoading(false);
+    }
+  }
 
   return (
     <main className="min-h-screen bg-background">
@@ -51,7 +74,11 @@ export default function SettingsPage() {
               <div>
                 <Label>Nome</Label>
 
-                <Input defaultValue="João Silva" className="mt-2" />
+                <Input
+                  value={user?.name ?? ""}
+                  disabled
+                  className="mt-2 disabled:cursor-not-allowed disabled:opacity-70"
+                />
               </div>
 
               <div>
@@ -61,21 +88,47 @@ export default function SettingsPage() {
                   <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
 
                   <Input
-                    defaultValue="contato@email.com"
-                    className="pl-10"
+                    value={user?.email ?? ""}
+                    disabled
+                    className="pl-10 disabled:cursor-not-allowed disabled:opacity-70"
                   />
                 </div>
               </div>
 
               <div>
-                <Label>Plano atual</Label>
+                <Label>Tipo de usuário</Label>
 
-                <Input disabled defaultValue="Premium" className="mt-2" />
+                <Input
+                  disabled
+                  value={
+                    user?.role === "RESTAURANT_OWNER"
+                      ? "Dono do restaurante"
+                      : user?.role === "MASTER"
+                        ? "Master"
+                        : user?.role === "RESTAURANT_STAFF"
+                          ? "Funcionário"
+                          : ""
+                  }
+                  className="mt-2 disabled:cursor-not-allowed disabled:opacity-70"
+                />
               </div>
 
-              <Button className="w-full bg-primary text-primary-foreground hover:opacity-90">
+              <div>
+                <Label>Status da conta</Label>
+
+                <Input
+                  disabled
+                  value={user?.is_active ? "Ativa" : "Inativa"}
+                  className="mt-2 disabled:cursor-not-allowed disabled:opacity-70"
+                />
+              </div>
+
+              <Button
+                disabled
+                className="w-full bg-primary text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+              >
                 <Save size={16} />
-                Salvar alterações
+                Alteração de dados em breve
               </Button>
             </div>
           </div>
@@ -97,7 +150,8 @@ export default function SettingsPage() {
                   <Input
                     type={showPassword ? "text" : "password"}
                     placeholder="Digite sua senha atual"
-                    className="pr-10"
+                    disabled
+                    className="pr-10 disabled:cursor-not-allowed disabled:opacity-70"
                   />
 
                   <button
@@ -116,7 +170,8 @@ export default function SettingsPage() {
                 <Input
                   type="password"
                   placeholder="Digite a nova senha"
-                  className="mt-2"
+                  disabled
+                  className="mt-2 disabled:cursor-not-allowed disabled:opacity-70"
                 />
               </div>
 
@@ -126,15 +181,17 @@ export default function SettingsPage() {
                 <Input
                   type="password"
                   placeholder="Confirme a nova senha"
-                  className="mt-2"
+                  disabled
+                  className="mt-2 disabled:cursor-not-allowed disabled:opacity-70"
                 />
               </div>
 
               <Button
                 variant="outline"
-                className="w-full border-primary text-primary hover:bg-primary/10"
+                disabled
+                className="w-full border-primary text-primary hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                Atualizar senha
+                Atualizar senha em breve
               </Button>
 
               <div className="rounded-xl border border-border bg-background p-4">
@@ -147,14 +204,16 @@ export default function SettingsPage() {
                     </p>
 
                     <p className="mt-1 text-sm text-muted-foreground">
-                      Solicite a redefinição através do seu e-mail de acesso.
+                      A redefinição de senha será implementada depois com envio
+                      de e-mail seguro.
                     </p>
 
                     <Button
                       variant="link"
-                      className="mt-2 h-auto p-0 text-primary"
+                      disabled
+                      className="mt-2 h-auto p-0 text-primary disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      Redefinir senha
+                      Redefinir senha em breve
                     </Button>
                   </div>
                 </div>
@@ -171,9 +230,14 @@ export default function SettingsPage() {
               Encerre sua sessão atual no painel administrativo.
             </p>
 
-            <Button variant="destructive" className="w-full">
+            <Button
+              variant="destructive"
+              onClick={handleLogout}
+              disabled={logoutLoading}
+              className="w-full disabled:cursor-not-allowed disabled:opacity-60"
+            >
               <LogOut size={16} />
-              Encerrar sessão
+              {logoutLoading ? "Saindo..." : "Encerrar sessão"}
             </Button>
           </div>
         </div>

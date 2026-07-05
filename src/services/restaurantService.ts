@@ -117,3 +117,57 @@ export function clearSelectedRestaurant() {
 
   localStorage.removeItem(SELECTED_RESTAURANT_KEY);
 }
+
+export async function getRestaurantById(id: string): Promise<Restaurant> {
+  const response = await apiFetch(`/restaurants/${id}`, {
+    method: "GET",
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      await getApiErrorMessage(response, "Erro ao buscar restaurante"),
+    );
+  }
+
+  return response.json();
+}
+
+export async function blockRestaurant(id: string): Promise<Restaurant> {
+  const response = await apiFetch(`/restaurants/${id}/block`, {
+    method: "PATCH",
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      await getApiErrorMessage(response, "Erro ao bloquear restaurante"),
+    );
+  }
+
+  return response.json();
+}
+
+export async function activateRestaurant(id: string): Promise<Restaurant> {
+  const response = await apiFetch(`/restaurants/${id}/activate`, {
+    method: "PATCH",
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      await getApiErrorMessage(response, "Erro ao ativar restaurante"),
+    );
+  }
+
+  return response.json();
+}
+
+export async function deleteRestaurant(id: string): Promise<void> {
+  const response = await apiFetch(`/restaurants/${id}`, {
+    method: "DELETE",
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      await getApiErrorMessage(response, "Erro ao excluir restaurante"),
+    );
+  }
+}
