@@ -4,16 +4,33 @@ export type PaymentStatus = "PAID" | "PENDING" | "OVERDUE" | "CANCELED";
 
 export type SubscriptionStatus = "ACTIVE" | "PENDING" | "OVERDUE" | "CANCELED";
 
+export type PaymentGatewayProvider = "MANUAL" | "ASAAS";
+
+export type AsaasBillingType = "BOLETO" | "PIX" | "CREDIT_CARD" | "UNDEFINED";
+
 export type Payment = {
   id: string;
-  restaurant_id: string;
+  owner_user_id: string;
+  restaurant_id: string | null;
   subscription_id: string;
   amount: number;
   due_date: string;
   paid_at: string | null;
   status: PaymentStatus;
+
+  gateway_provider?: PaymentGatewayProvider;
+  gateway_payment_id?: string | null;
+  gateway_payment_url?: string | null;
+  gateway_invoice_url?: string | null;
+  gateway_status?: string | null;
+
   created_at: string;
   updated_at: string;
+
+  owner_name?: string;
+  owner_email?: string;
+  total_restaurants?: number;
+
   restaurant_name?: string;
   restaurant_slug?: string;
   subscription_status?: SubscriptionStatus;
@@ -22,7 +39,8 @@ export type Payment = {
 
 export type Subscription = {
   id: string;
-  restaurant_id: string;
+  owner_user_id: string;
+  restaurant_id: string | null;
   status: SubscriptionStatus;
   plan_name: string;
   monthly_price: number;
@@ -30,12 +48,18 @@ export type Subscription = {
   next_billing_date: string;
   created_at: string;
   updated_at: string;
+
+  owner_name?: string;
+  owner_email?: string;
+  total_restaurants?: number;
+
   restaurant_name?: string;
   restaurant_slug?: string;
 };
 
 export type CreatePaymentData = {
-  restaurant_id: string;
+  owner_user_id?: string;
+  restaurant_id?: string | null;
   subscription_id: string;
   amount: number;
   due_date: string;
@@ -48,8 +72,9 @@ export type GenerateMonthlyPaymentsData = {
 
 export type GenerateMonthlyPaymentSummary = {
   subscription_id: string;
-  restaurant_id: string;
-  restaurant_name: string;
+  owner_user_id: string;
+  owner_name: string;
+  owner_email: string;
   due_date: string;
   next_billing_date: string;
   payment: Payment | null;
@@ -63,6 +88,15 @@ export type GenerateMonthlyPaymentsResult = {
   generated_count: number;
   skipped_count: number;
   summaries: GenerateMonthlyPaymentSummary[];
+};
+
+export type CreateAsaasChargeData = {
+  billing_type?: AsaasBillingType;
+};
+
+export type CreateAsaasChargeResult = {
+  payment: Payment;
+  asaas_payment?: unknown;
 };
 
 export async function getPayments(): Promise<Payment[]> {
@@ -113,6 +147,24 @@ export async function generateMonthlyPayments(
   if (!response.ok) {
     throw new Error(
       await getApiErrorMessage(response, "Erro ao gerar faturas mensais"),
+    );
+  }
+
+  return response.json();
+}
+
+export async function createAsaasCharge(
+  paymentId: string,
+  data: CreateAsaasChargeData = {},
+): Promise<CreateAsaasChargeResult> {
+  const response = await apiFetch(`/payments/${paymentId}/asaas-charge`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      await getApiErrorMessage(response, "Erro ao gerar cobrança Asaas"),
     );
   }
 

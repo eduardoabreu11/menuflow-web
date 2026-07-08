@@ -5,7 +5,9 @@ import { useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
   CheckCircle,
+  CreditCard,
   DollarSign,
+  ExternalLink,
   Eye,
   FileText,
   Loader2,
@@ -23,18 +25,21 @@ import { MasterMetricCard } from "../_components/masterMetricCard";
 
 import {
   cancelPayment,
+  createAsaasCharge,
   createPayment,
+  generateMonthlyPayments,
   getPayments,
   getSubscriptions,
   markPaymentAsPaid,
   type Payment,
+  type PaymentGatewayProvider,
   type PaymentStatus,
   type Subscription,
-  generateMonthlyPayments,
 } from "@/services/financeService";
 
 type PaymentStatusFilter = PaymentStatus | "ALL";
 type NewPaymentStatus = "PENDING" | "PAID";
+type MetricsPeriod = "CURRENT_MONTH" | "ALL" | "CUSTOM_MONTH";
 
 const statusStyles: Record<PaymentStatus, string> = {
   PAID: "bg-green-100 text-green-700",
@@ -48,6 +53,22 @@ const statusLabels: Record<PaymentStatus, string> = {
   PENDING: "Pendente",
   OVERDUE: "Atrasado",
   CANCELED: "Cancelado",
+};
+
+const gatewayLabels: Record<PaymentGatewayProvider, string> = {
+  MANUAL: "Manual",
+  ASAAS: "Asaas",
+};
+
+const gatewayStyles: Record<PaymentGatewayProvider, string> = {
+  MANUAL: "bg-zinc-100 text-zinc-700",
+  ASAAS: "bg-blue-100 text-blue-700",
+};
+
+const metricsPeriodLabels: Record<MetricsPeriod, string> = {
+  CURRENT_MONTH: "Este mês",
+  ALL: "Todos os meses",
+  CUSTOM_MONTH: "Mês específico",
 };
 
 function formatCurrency(value: number) {
@@ -80,6 +101,15 @@ function getDateInputValue(daysToAdd = 30) {
   return `${year}-${month}-${day}`;
 }
 
+function getCurrentMonthKey() {
+  const today = new Date();
+
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+
+  return `${year}-${month}`;
+}
+
 function parseCurrencyInput(value: string) {
   return Number(value.replace(/\./g, "").replace(",", "."));
 }
@@ -98,12 +128,102 @@ function isPastDueDate(date: string) {
   return dueDate < today;
 }
 
+function getPaymentDateTime(payment: Payment) {
+  const cleanDate = payment.due_date.split("T")[0];
+
+  if (!cleanDate) return 0;
+
+  return new Date(`${cleanDate}T00:00:00`).getTime();
+}
+
+function getPaymentMonthKey(payment: Payment) {
+  const cleanDate = payment.due_date.split("T")[0];
+
+  if (!cleanDate) return "";
+
+  const [year, month] = cleanDate.split("-");
+
+  if (!year || !month) return "";
+
+  return `${year}-${month}`;
+}
+
+function isCurrentMonthPayment(payment: Payment) {
+  return getPaymentMonthKey(payment) === getCurrentMonthKey();
+}
+
+function formatMonthLabel(monthKey: string) {
+  const [yearText, monthText] = monthKey.split("-");
+
+  const year = Number(yearText);
+  const month = Number(monthText);
+
+  if (!year || !month) return monthKey;
+
+  const label = new Intl.DateTimeFormat("pt-BR", {
+    month: "long",
+    year: "numeric",
+  }).format(new Date(year, month - 1, 1));
+
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
 function getEffectiveStatus(payment: Payment): PaymentStatus {
   if (payment.status === "PENDING" && isPastDueDate(payment.due_date)) {
     return "OVERDUE";
   }
 
   return payment.status;
+}
+
+function getPaymentGatewayProvider(payment: Payment): PaymentGatewayProvider {
+  return payment.gateway_provider ?? "MANUAL";
+}
+
+function getPaymentInvoiceUrl(payment: Payment) {
+  return payment.gateway_invoice_url ?? payment.gateway_payment_url ?? "";
+}
+
+function canGenerateAsaasCharge(payment: Payment) {
+  return (
+    payment.status === "PENDING" &&
+    getPaymentGatewayProvider(payment) !== "ASAAS" &&
+    !payment.gateway_payment_id
+  );
+}
+
+function mergePaymentDetails(currentPayment: Payment, updatedPayment: Payment) {
+  return {
+    ...currentPayment,
+    ...updatedPayment,
+    owner_name: updatedPayment.owner_name ?? currentPayment.owner_name,
+    owner_email: updatedPayment.owner_email ?? currentPayment.owner_email,
+    total_restaurants:
+      updatedPayment.total_restaurants ?? currentPayment.total_restaurants,
+    plan_name: updatedPayment.plan_name ?? currentPayment.plan_name,
+    subscription_status:
+      updatedPayment.subscription_status ?? currentPayment.subscription_status,
+  };
+}
+
+function getPaymentsByPeriod(
+  payments: Payment[],
+  metricsPeriod: MetricsPeriod,
+  selectedMonth: string,
+) {
+  return payments
+    .filter((payment) => {
+      if (metricsPeriod === "CURRENT_MONTH") {
+        return isCurrentMonthPayment(payment);
+      }
+
+      if (metricsPeriod === "CUSTOM_MONTH") {
+        return getPaymentMonthKey(payment) === selectedMonth;
+      }
+
+      return true;
+    })
+    .sort((a, b) => getPaymentDateTime(b) - getPaymentDateTime(a));
 }
 
 async function fetchFinanceData() {
@@ -123,12 +243,17 @@ export default function MasterFinanceiroPage() {
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [asaasChargeLoading, setAsaasChargeLoading] = useState<string | null>(
+    null,
+  );
+  const [generateMonthlyLoading, setGenerateMonthlyLoading] = useState(false);
   const [error, setError] = useState("");
 
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<PaymentStatusFilter>("ALL");
-
-  const [generateMonthlyLoading, setGenerateMonthlyLoading] = useState(false);
+  const [metricsPeriod, setMetricsPeriod] =
+    useState<MetricsPeriod>("CURRENT_MONTH");
+  const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthKey());
 
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [createLoading, setCreateLoading] = useState(false);
@@ -145,6 +270,37 @@ export default function MasterFinanceiroPage() {
       (subscription) => subscription.status !== "CANCELED",
     );
   }, [subscriptions]);
+
+  const availableMonths = useMemo(() => {
+    const monthMap = new Map<string, string>();
+
+    payments.forEach((payment) => {
+      const monthKey = getPaymentMonthKey(payment);
+
+      if (!monthKey) return;
+
+      monthMap.set(monthKey, formatMonthLabel(monthKey));
+    });
+
+    return Array.from(monthMap.entries())
+      .map(([value, label]) => ({
+        value,
+        label,
+      }))
+      .sort((a, b) => b.value.localeCompare(a.value));
+  }, [payments]);
+
+  const selectedPeriodLabel = useMemo(() => {
+    if (metricsPeriod === "CUSTOM_MONTH") {
+      return selectedMonth ? formatMonthLabel(selectedMonth) : "Mês específico";
+    }
+
+    return metricsPeriodLabels[metricsPeriod];
+  }, [metricsPeriod, selectedMonth]);
+
+  const periodPayments = useMemo(() => {
+    return getPaymentsByPeriod(payments, metricsPeriod, selectedMonth);
+  }, [payments, metricsPeriod, selectedMonth]);
 
   async function handleRefreshFinanceData() {
     try {
@@ -202,19 +358,28 @@ export default function MasterFinanceiroPage() {
   }, []);
 
   const metrics = useMemo(() => {
-    const expectedRevenue = subscriptions
-      .filter((subscription) => subscription.status !== "CANCELED")
+    const validPayments = periodPayments.filter(
+      (payment) => payment.status !== "CANCELED",
+    );
+
+    const monthlyRecurringRevenue = subscriptions
+      .filter((subscription) => subscription.status === "ACTIVE")
       .reduce((total, subscription) => total + subscription.monthly_price, 0);
 
-    const received = payments
+    const expectedRevenue = validPayments.reduce(
+      (total, payment) => total + payment.amount,
+      0,
+    );
+
+    const received = validPayments
       .filter((payment) => payment.status === "PAID")
       .reduce((total, payment) => total + payment.amount, 0);
 
-    const pending = payments
+    const pending = validPayments
       .filter((payment) => getEffectiveStatus(payment) === "PENDING")
       .reduce((total, payment) => total + payment.amount, 0);
 
-    const overdue = payments
+    const overdue = validPayments
       .filter((payment) => getEffectiveStatus(payment) === "OVERDUE")
       .reduce((total, payment) => total + payment.amount, 0);
 
@@ -223,26 +388,32 @@ export default function MasterFinanceiroPage() {
     ).length;
 
     return {
+      monthlyRecurringRevenue,
       expectedRevenue,
       received,
       pending,
       overdue,
       activeSubscriptions,
+      validPaymentsCount: validPayments.length,
     };
-  }, [payments, subscriptions]);
+  }, [periodPayments, subscriptions]);
 
   const filteredPayments = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
 
-    return payments.filter((payment) => {
+    return periodPayments.filter((payment) => {
       const status = getEffectiveStatus(payment);
+      const gatewayProvider = getPaymentGatewayProvider(payment);
 
       const matchesStatus = statusFilter === "ALL" || status === statusFilter;
 
       const searchableContent = [
-        payment.restaurant_name ?? "",
-        payment.restaurant_slug ?? "",
+        payment.owner_name ?? "",
+        payment.owner_email ?? "",
         payment.plan_name ?? "",
+        gatewayLabels[gatewayProvider],
+        payment.gateway_status ?? "",
+        String(payment.total_restaurants ?? ""),
         formatCurrency(payment.amount),
         formatDate(payment.due_date),
         statusLabels[status],
@@ -256,13 +427,27 @@ export default function MasterFinanceiroPage() {
 
       return matchesStatus && matchesSearch;
     });
-  }, [payments, searchTerm, statusFilter]);
+  }, [periodPayments, searchTerm, statusFilter]);
 
   const hasActiveFilters = searchTerm.trim() !== "" || statusFilter !== "ALL";
 
   function clearFilters() {
     setSearchTerm("");
     setStatusFilter("ALL");
+  }
+
+  function handleMetricsPeriodChange(value: MetricsPeriod) {
+    setMetricsPeriod(value);
+    setSearchTerm("");
+    setStatusFilter("ALL");
+
+    if (value === "CUSTOM_MONTH") {
+      const firstAvailableMonth = availableMonths[0]?.value;
+
+      if (firstAvailableMonth) {
+        setSelectedMonth(firstAvailableMonth);
+      }
+    }
   }
 
   function openCreateModal() {
@@ -282,6 +467,17 @@ export default function MasterFinanceiroPage() {
     if (createLoading) return;
 
     setCreateModalOpen(false);
+  }
+
+  function handleOpenInvoice(payment: Payment) {
+    const invoiceUrl = getPaymentInvoiceUrl(payment);
+
+    if (!invoiceUrl) {
+      alert("Esta fatura ainda não possui link de pagamento.");
+      return;
+    }
+
+    window.open(invoiceUrl, "_blank", "noopener,noreferrer");
   }
 
   async function handleGenerateMonthlyPayments() {
@@ -345,7 +541,7 @@ export default function MasterFinanceiroPage() {
       setCreateLoading(true);
 
       const createdPayment = await createPayment({
-        restaurant_id: selectedSubscription.restaurant_id,
+        owner_user_id: selectedSubscription.owner_user_id,
         subscription_id: selectedSubscription.id,
         amount,
         due_date: newPaymentDueDate,
@@ -360,8 +556,9 @@ export default function MasterFinanceiroPage() {
 
       const paymentWithDetails: Payment = {
         ...finalPayment,
-        restaurant_name: selectedSubscription.restaurant_name,
-        restaurant_slug: selectedSubscription.restaurant_slug,
+        owner_name: selectedSubscription.owner_name,
+        owner_email: selectedSubscription.owner_email,
+        total_restaurants: selectedSubscription.total_restaurants,
         plan_name: selectedSubscription.plan_name,
         subscription_status: selectedSubscription.status,
       };
@@ -382,6 +579,56 @@ export default function MasterFinanceiroPage() {
     }
   }
 
+  async function handleCreateAsaasCharge(payment: Payment) {
+    if (!canGenerateAsaasCharge(payment)) {
+      alert("Esta fatura não pode gerar cobrança Asaas.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Deseja gerar uma cobrança no Asaas para esta fatura?",
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setAsaasChargeLoading(payment.id);
+
+      const result = await createAsaasCharge(payment.id, {
+        billing_type: "UNDEFINED",
+      });
+
+      setPayments((currentPayments) =>
+        currentPayments.map((currentPayment) =>
+          currentPayment.id === result.payment.id
+            ? mergePaymentDetails(currentPayment, result.payment)
+            : currentPayment,
+        ),
+      );
+
+      const invoiceUrl = getPaymentInvoiceUrl(result.payment);
+
+      if (invoiceUrl) {
+        const openNow = window.confirm(
+          "Cobrança Asaas gerada com sucesso. Deseja abrir a fatura agora?",
+        );
+
+        if (openNow) {
+          window.open(invoiceUrl, "_blank", "noopener,noreferrer");
+        }
+      } else {
+        alert("Cobrança Asaas gerada com sucesso.");
+      }
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Erro ao gerar cobrança Asaas";
+
+      alert(message);
+    } finally {
+      setAsaasChargeLoading(null);
+    }
+  }
+
   async function handleMarkAsPaid(payment: Payment) {
     const confirmed = window.confirm("Deseja marcar esta fatura como paga?");
 
@@ -395,14 +642,7 @@ export default function MasterFinanceiroPage() {
       setPayments((currentPayments) =>
         currentPayments.map((currentPayment) =>
           currentPayment.id === updatedPayment.id
-            ? {
-                ...currentPayment,
-                ...updatedPayment,
-                restaurant_name: currentPayment.restaurant_name,
-                restaurant_slug: currentPayment.restaurant_slug,
-                plan_name: currentPayment.plan_name,
-                subscription_status: currentPayment.subscription_status,
-              }
+            ? mergePaymentDetails(currentPayment, updatedPayment)
             : currentPayment,
         ),
       );
@@ -431,14 +671,7 @@ export default function MasterFinanceiroPage() {
       setPayments((currentPayments) =>
         currentPayments.map((currentPayment) =>
           currentPayment.id === updatedPayment.id
-            ? {
-                ...currentPayment,
-                ...updatedPayment,
-                restaurant_name: currentPayment.restaurant_name,
-                restaurant_slug: currentPayment.restaurant_slug,
-                plan_name: currentPayment.plan_name,
-                subscription_status: currentPayment.subscription_status,
-              }
+            ? mergePaymentDetails(currentPayment, updatedPayment)
             : currentPayment,
         ),
       );
@@ -454,14 +687,22 @@ export default function MasterFinanceiroPage() {
 
   function handleViewPayment(payment: Payment) {
     const status = getEffectiveStatus(payment);
+    const gatewayProvider = getPaymentGatewayProvider(payment);
+    const invoiceUrl = getPaymentInvoiceUrl(payment);
 
     alert(
       [
-        `Restaurante: ${payment.restaurant_name ?? "Não informado"}`,
-        `Plano: ${payment.plan_name ?? "MenuFlow Completo"}`,
+        `Cliente/Dono: ${payment.owner_name ?? "Não informado"}`,
+        `E-mail: ${payment.owner_email ?? "-"}`,
+        `Restaurantes: ${payment.total_restaurants ?? 0}`,
+        `Plano: ${payment.plan_name ?? "Serviu Completo"}`,
         `Valor: ${formatCurrency(payment.amount)}`,
         `Vencimento: ${formatDate(payment.due_date)}`,
         `Status: ${statusLabels[status]}`,
+        `Gateway: ${gatewayLabels[gatewayProvider]}`,
+        `Status Gateway: ${payment.gateway_status ?? "-"}`,
+        `ID Gateway: ${payment.gateway_payment_id ?? "-"}`,
+        `Link da fatura: ${invoiceUrl || "-"}`,
         payment.paid_at
           ? `Pago em: ${formatDate(payment.paid_at)}`
           : "Pago em: -",
@@ -485,6 +726,7 @@ export default function MasterFinanceiroPage() {
                 Gerencie receitas, cobranças e pagamentos reais da plataforma.
               </p>
             </div>
+
             <div className="flex items-center gap-3">
               <button
                 type="button"
@@ -533,10 +775,57 @@ export default function MasterFinanceiroPage() {
             </div>
           )}
 
+          <div className="mb-5 flex flex-col gap-3 rounded-xl border border-border bg-card p-4 xl:flex-row xl:items-center xl:justify-between">
+            <div>
+              <p className="text-sm font-medium">Período do financeiro</p>
+
+              <p className="text-xs text-muted-foreground">
+                Os cards e a tabela abaixo mudam conforme o período escolhido.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-3 md:flex-row md:items-center">
+              <select
+                value={metricsPeriod}
+                onChange={(event) =>
+                  handleMetricsPeriodChange(event.target.value as MetricsPeriod)
+                }
+                className="h-10 rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-primary"
+              >
+                <option value="CURRENT_MONTH">Este mês</option>
+                <option value="ALL">Todos os meses</option>
+                <option value="CUSTOM_MONTH">Mês específico</option>
+              </select>
+
+              {metricsPeriod === "CUSTOM_MONTH" && (
+                <select
+                  value={selectedMonth}
+                  onChange={(event) => {
+                    setSelectedMonth(event.target.value);
+                    setSearchTerm("");
+                    setStatusFilter("ALL");
+                  }}
+                  disabled={availableMonths.length === 0}
+                  className="h-10 rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {availableMonths.length === 0 ? (
+                    <option value="">Nenhum mês disponível</option>
+                  ) : (
+                    availableMonths.map((month) => (
+                      <option key={month.value} value={month.value}>
+                        {month.label}
+                      </option>
+                    ))
+                  )}
+                </select>
+              )}
+            </div>
+          </div>
+
           <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
             <MasterMetricCard
               title="Receita Mensal"
-              value={formatCurrency(metrics.expectedRevenue)}
+              value={formatCurrency(metrics.monthlyRecurringRevenue)}
               description={`${metrics.activeSubscriptions} assinaturas ativas`}
               icon={<DollarSign size={24} />}
             />
@@ -544,21 +833,21 @@ export default function MasterFinanceiroPage() {
             <MasterMetricCard
               title="Recebido"
               value={formatCurrency(metrics.received)}
-              description="Pagamentos confirmados"
+              description={selectedPeriodLabel}
               icon={<CheckCircle size={24} />}
             />
 
             <MasterMetricCard
               title="Pendente"
               value={formatCurrency(metrics.pending)}
-              description="Aguardando pagamento"
+              description={selectedPeriodLabel}
               icon={<Wallet size={24} />}
             />
 
             <MasterMetricCard
               title="Atrasado"
               value={formatCurrency(metrics.overdue)}
-              description="Cobranças vencidas"
+              description={selectedPeriodLabel}
               icon={<XCircle size={24} />}
             />
           </div>
@@ -571,7 +860,7 @@ export default function MasterFinanceiroPage() {
                     <h2 className="text-lg font-semibold">Cobranças</h2>
 
                     <p className="text-sm text-muted-foreground">
-                      Faturas reais cadastradas no banco de dados.
+                      Faturas do período: {selectedPeriodLabel}.
                     </p>
                   </div>
 
@@ -582,8 +871,8 @@ export default function MasterFinanceiroPage() {
                       <input
                         value={searchTerm}
                         onChange={(event) => setSearchTerm(event.target.value)}
-                        placeholder="Pesquisar restaurante, plano..."
-                        className="h-10 w-full rounded-lg border border-border bg-background pl-10 pr-4 text-sm outline-none focus:border-primary md:w-72"
+                        placeholder="Pesquisar cliente, e-mail, plano, gateway..."
+                        className="h-10 w-full rounded-lg border border-border bg-background pl-10 pr-4 text-sm outline-none focus:border-primary md:w-80"
                       />
                     </div>
 
@@ -617,8 +906,8 @@ export default function MasterFinanceiroPage() {
                 </div>
 
                 <div className="mt-4 text-xs text-muted-foreground">
-                  Mostrando {filteredPayments.length} de {payments.length}{" "}
-                  faturas.
+                  Mostrando {filteredPayments.length} de {periodPayments.length}{" "}
+                  faturas do período. Total geral no banco: {payments.length}.
                 </div>
               </div>
 
@@ -626,10 +915,13 @@ export default function MasterFinanceiroPage() {
                 <table className="w-full text-left text-sm">
                   <thead className="border-b border-border bg-muted/40">
                     <tr>
-                      <th className="px-5 py-4 font-medium">Restaurante</th>
+                      <th className="px-5 py-4 font-medium">Cliente/Dono</th>
+                      <th className="px-5 py-4 font-medium">E-mail</th>
+                      <th className="px-5 py-4 font-medium">Restaurantes</th>
                       <th className="px-5 py-4 font-medium">Plano</th>
                       <th className="px-5 py-4 font-medium">Valor</th>
                       <th className="px-5 py-4 font-medium">Vencimento</th>
+                      <th className="px-5 py-4 font-medium">Gateway</th>
                       <th className="px-5 py-4 font-medium">Status</th>
                       <th className="px-5 py-4 text-right font-medium">
                         Ações
@@ -641,7 +933,7 @@ export default function MasterFinanceiroPage() {
                     {loading ? (
                       <tr>
                         <td
-                          colSpan={6}
+                          colSpan={9}
                           className="px-5 py-10 text-center text-muted-foreground"
                         >
                           <div className="flex items-center justify-center gap-2">
@@ -653,29 +945,44 @@ export default function MasterFinanceiroPage() {
                     ) : filteredPayments.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={6}
+                          colSpan={9}
                           className="px-5 py-10 text-center text-muted-foreground"
                         >
-                          Nenhuma fatura encontrada com os filtros atuais.
+                          Nenhuma fatura encontrada neste período/filtro.
                         </td>
                       </tr>
                     ) : (
                       filteredPayments.map((payment) => {
                         const status = getEffectiveStatus(payment);
+                        const gatewayProvider =
+                          getPaymentGatewayProvider(payment);
+                        const invoiceUrl = getPaymentInvoiceUrl(payment);
+
                         const isPaid = payment.status === "PAID";
                         const isCanceled = payment.status === "CANCELED";
                         const isCurrentActionLoading =
                           actionLoading === payment.id;
+                        const isCurrentAsaasChargeLoading =
+                          asaasChargeLoading === payment.id;
+                        const isAnyPaymentActionLoading =
+                          isCurrentActionLoading || isCurrentAsaasChargeLoading;
 
                         return (
                           <tr key={payment.id} className="hover:bg-accent/50">
                             <td className="px-5 py-4 font-medium">
-                              {payment.restaurant_name ??
-                                "Restaurante não informado"}
+                              {payment.owner_name ?? "Cliente não informado"}
                             </td>
 
                             <td className="px-5 py-4 text-muted-foreground">
-                              {payment.plan_name ?? "MenuFlow Completo"}
+                              {payment.owner_email ?? "-"}
+                            </td>
+
+                            <td className="px-5 py-4 text-muted-foreground">
+                              {payment.total_restaurants ?? 0}
+                            </td>
+
+                            <td className="px-5 py-4 text-muted-foreground">
+                              {payment.plan_name ?? "Serviu Completo"}
                             </td>
 
                             <td className="px-5 py-4 text-muted-foreground">
@@ -687,6 +994,22 @@ export default function MasterFinanceiroPage() {
                             </td>
 
                             <td className="px-5 py-4">
+                              <div className="flex flex-col gap-1">
+                                <span
+                                  className={`w-fit rounded-full px-3 py-1 text-xs font-medium ${gatewayStyles[gatewayProvider]}`}
+                                >
+                                  {gatewayLabels[gatewayProvider]}
+                                </span>
+
+                                {payment.gateway_status && (
+                                  <span className="text-xs text-muted-foreground">
+                                    {payment.gateway_status}
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+
+                            <td className="px-5 py-4">
                               <span
                                 className={`rounded-full px-3 py-1 text-xs font-medium ${statusStyles[status]}`}
                               >
@@ -695,7 +1018,7 @@ export default function MasterFinanceiroPage() {
                             </td>
 
                             <td className="px-5 py-4">
-                              <div className="flex justify-end gap-2">
+                              <div className="flex flex-wrap justify-end gap-2">
                                 <button
                                   type="button"
                                   onClick={() => handleViewPayment(payment)}
@@ -705,18 +1028,34 @@ export default function MasterFinanceiroPage() {
                                   <Eye size={16} />
                                 </button>
 
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    alert(
-                                      "Geração de recibo/PDF será implementada depois.",
-                                    )
-                                  }
-                                  className="rounded-lg border border-border p-2 hover:bg-accent"
-                                  title="Recibo em breve"
-                                >
-                                  <FileText size={16} />
-                                </button>
+                                {invoiceUrl && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenInvoice(payment)}
+                                    className="rounded-lg border border-border p-2 text-blue-700 hover:bg-blue-50"
+                                    title="Abrir fatura Asaas"
+                                  >
+                                    <ExternalLink size={16} />
+                                  </button>
+                                )}
+
+                                {canGenerateAsaasCharge(payment) && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleCreateAsaasCharge(payment)
+                                    }
+                                    disabled={isAnyPaymentActionLoading}
+                                    className="rounded-lg border border-border p-2 text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-40"
+                                    title="Gerar cobrança Asaas"
+                                  >
+                                    {isCurrentAsaasChargeLoading ? (
+                                      <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                      <CreditCard size={16} />
+                                    )}
+                                  </button>
+                                )}
 
                                 <button
                                   type="button"
@@ -724,7 +1063,7 @@ export default function MasterFinanceiroPage() {
                                   disabled={
                                     isPaid ||
                                     isCanceled ||
-                                    isCurrentActionLoading
+                                    isAnyPaymentActionLoading
                                   }
                                   className="rounded-lg border border-border p-2 text-green-700 hover:bg-green-50 disabled:cursor-not-allowed disabled:opacity-40"
                                   title="Marcar como paga"
@@ -742,7 +1081,7 @@ export default function MasterFinanceiroPage() {
                                   disabled={
                                     isPaid ||
                                     isCanceled ||
-                                    isCurrentActionLoading
+                                    isAnyPaymentActionLoading
                                   }
                                   className="rounded-lg border border-border p-2 text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
                                   title="Cancelar fatura"
@@ -761,16 +1100,26 @@ export default function MasterFinanceiroPage() {
             </div>
 
             <div className="rounded-xl border border-border bg-card p-6">
-              <h2 className="mb-5 text-lg font-semibold">Resumo do Mês</h2>
+              <h2 className="mb-5 text-lg font-semibold">Resumo</h2>
+
+              <div className="mb-4 rounded-lg border border-border bg-muted/30 p-3">
+                <p className="text-xs text-muted-foreground">
+                  Período selecionado
+                </p>
+
+                <p className="text-sm font-semibold">{selectedPeriodLabel}</p>
+              </div>
 
               <div className="space-y-4">
                 <div className="rounded-lg border border-border p-4">
-                  <p className="text-sm text-muted-foreground">
-                    Receita Prevista
-                  </p>
+                  <p className="text-sm text-muted-foreground">Previsto</p>
 
                   <p className="mt-1 text-2xl font-bold">
                     {formatCurrency(metrics.expectedRevenue)}
+                  </p>
+
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {metrics.validPaymentsCount} fatura(s) válida(s)
                   </p>
                 </div>
 
@@ -821,7 +1170,7 @@ export default function MasterFinanceiroPage() {
                 <h2 className="text-xl font-semibold">Nova fatura</h2>
 
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Crie uma cobrança manual para um restaurante.
+                  Crie uma cobrança manual para um cliente/dono.
                 </p>
               </div>
 
@@ -837,7 +1186,7 @@ export default function MasterFinanceiroPage() {
 
             <div className="space-y-5">
               <div>
-                <label className="text-sm font-medium">Restaurante</label>
+                <label className="text-sm font-medium">Cliente/Dono</label>
 
                 <select
                   value={
@@ -856,10 +1205,10 @@ export default function MasterFinanceiroPage() {
                   ) : (
                     availableSubscriptions.map((subscription) => (
                       <option key={subscription.id} value={subscription.id}>
-                        {subscription.restaurant_name ??
-                          subscription.restaurant_slug ??
-                          "Restaurante"}{" "}
-                        - {subscription.plan_name}
+                        {subscription.owner_name ?? "Cliente"} -{" "}
+                        {subscription.owner_email ?? "-"} -{" "}
+                        {subscription.total_restaurants ?? 0} restaurante(s) -{" "}
+                        {subscription.plan_name}
                       </option>
                     ))
                   )}
