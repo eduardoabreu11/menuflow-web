@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { ImagePlus, Video } from "lucide-react";
+import { useState, type ChangeEvent } from "react";
+import { ImagePlus, Loader2, Upload, Video, X } from "lucide-react";
 
 import {
   Dialog,
@@ -34,6 +34,8 @@ import {
   updateProduct,
   type Product,
 } from "@/services/productService";
+
+import { uploadImage, uploadVideo } from "@/services/uploadService";
 
 type ProductModalProps = {
   open: boolean;
@@ -71,6 +73,10 @@ function ProductModalContent({
   const [isNew, setIsNew] = useState(product?.is_new ?? false);
 
   const [loading, setLoading] = useState(false);
+  const [imageUploading, setImageUploading] = useState(false);
+  const [videoUploading, setVideoUploading] = useState(false);
+
+  const isUploading = imageUploading || videoUploading;
 
   function getNormalizedPrice() {
     const normalizedPrice = price
@@ -80,6 +86,102 @@ function ProductModalContent({
       .trim();
 
     return Number(normalizedPrice);
+  }
+
+  async function handleImageFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      alert("Envie apenas arquivos de imagem.");
+      event.target.value = "";
+      return;
+    }
+
+    const maxSizeInMB = 5;
+    const maxSizeInBytes = maxSizeInMB * 1024 * 1024;
+
+    if (file.size > maxSizeInBytes) {
+      alert(`A imagem deve ter no máximo ${maxSizeInMB}MB.`);
+      event.target.value = "";
+      return;
+    }
+
+    try {
+      setImageUploading(true);
+
+      const uploadedImage = await uploadImage({
+        file,
+        folder: "serviu/produtos",
+      });
+
+      setImageUrl(uploadedImage.secure_url);
+    } catch (error) {
+      console.error(error);
+
+      if (error instanceof Error) {
+        alert(error.message);
+        return;
+      }
+
+      alert("Erro ao fazer upload da imagem");
+    } finally {
+      setImageUploading(false);
+      event.target.value = "";
+    }
+  }
+
+  async function handleVideoFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+
+    if (!file) return;
+
+    if (!file.type.startsWith("video/")) {
+      alert("Envie apenas arquivos de vídeo.");
+      event.target.value = "";
+      return;
+    }
+
+    const maxSizeInMB = 50;
+    const maxSizeInBytes = maxSizeInMB * 1024 * 1024;
+
+    if (file.size > maxSizeInBytes) {
+      alert(`O vídeo deve ter no máximo ${maxSizeInMB}MB.`);
+      event.target.value = "";
+      return;
+    }
+
+    try {
+      setVideoUploading(true);
+
+      const uploadedVideo = await uploadVideo({
+        file,
+        folder: "serviu/videos",
+      });
+
+      setVideoUrl(uploadedVideo.secure_url);
+    } catch (error) {
+      console.error(error);
+
+      if (error instanceof Error) {
+        alert(error.message);
+        return;
+      }
+
+      alert("Erro ao fazer upload do vídeo");
+    } finally {
+      setVideoUploading(false);
+      event.target.value = "";
+    }
+  }
+
+  function handleRemoveImage() {
+    setImageUrl("");
+  }
+
+  function handleRemoveVideo() {
+    setVideoUrl("");
   }
 
   async function handleSubmit() {
@@ -288,25 +390,95 @@ function ProductModalContent({
           </h3>
 
           <p className="mt-1 text-sm text-muted-foreground">
-            Por enquanto, informe a URL da imagem. Upload real vem depois.
+            Envie uma imagem do produto. Ela será salva no Cloudinary e a URL
+            será gravada no produto.
           </p>
 
-          <div className="mt-4 space-y-2">
-            <Label>URL da imagem</Label>
+          <div className="mt-4 space-y-4">
+            <div className="space-y-2">
+              <Label>URL da imagem</Label>
 
-            <Input
-              placeholder="https://exemplo.com/imagem.jpg"
-              value={imageUrl}
-              onChange={(event) => setImageUrl(event.target.value)}
-              className="border-border bg-background text-foreground placeholder:text-muted-foreground"
-            />
+              <Input
+                placeholder="https://exemplo.com/imagem.jpg"
+                value={imageUrl}
+                onChange={(event) => setImageUrl(event.target.value)}
+                className="border-border bg-background text-foreground placeholder:text-muted-foreground"
+              />
 
-            <div className="mt-3 flex h-32 flex-col items-center justify-center rounded-xl border-2 border-dashed border-primary/50 bg-background text-center">
-              <ImagePlus className="mb-3 text-primary" size={34} />
+              <p className="text-xs text-muted-foreground">
+                Você pode colar uma URL manualmente ou enviar uma imagem pelo
+                botão abaixo.
+              </p>
+            </div>
 
-              <strong className="text-sm text-primary">
-                Upload de imagem será implementado depois
-              </strong>
+            <div className="rounded-xl border-2 border-dashed border-primary/50 bg-background p-4">
+              {imageUrl ? (
+                <div className="space-y-4">
+                  <div
+                    className="h-48 w-full rounded-xl border border-border bg-cover bg-center bg-no-repeat"
+                    style={{
+                      backgroundImage: `url(${imageUrl})`,
+                    }}
+                  />
+
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <p className="max-w-[470px] truncate text-xs text-muted-foreground">
+                      {imageUrl}
+                    </p>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleRemoveImage}
+                      disabled={loading || isUploading}
+                      className="border-red-200 bg-transparent text-red-600 hover:bg-red-50 hover:text-red-700"
+                    >
+                      <X size={16} />
+                      Remover imagem
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex h-36 flex-col items-center justify-center text-center">
+                  <ImagePlus className="mb-3 text-primary" size={34} />
+
+                  <strong className="text-sm text-primary">
+                    Nenhuma imagem selecionada
+                  </strong>
+
+                  <span className="mt-1 text-xs text-muted-foreground">
+                    PNG, JPG, JPEG ou WEBP até 5MB
+                  </span>
+                </div>
+              )}
+
+              <div className="mt-4 flex items-center justify-center">
+                <Label
+                  htmlFor="product-image-upload"
+                  className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90"
+                >
+                  {imageUploading ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      Enviando imagem...
+                    </>
+                  ) : (
+                    <>
+                      <Upload size={16} />
+                      Enviar imagem
+                    </>
+                  )}
+                </Label>
+
+                <Input
+                  id="product-image-upload"
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageFileChange}
+                  disabled={loading || isUploading}
+                  className="hidden"
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -317,25 +489,94 @@ function ProductModalContent({
           </h3>
 
           <p className="mt-1 text-sm text-muted-foreground">
-            Informe a URL de um vídeo do produto, caso exista.
+            Envie um vídeo curto do produto. Ele será salvo no Cloudinary e a
+            URL será gravada no produto.
           </p>
 
-          <div className="mt-4 space-y-2">
-            <Label>URL do vídeo</Label>
+          <div className="mt-4 space-y-4">
+            <div className="space-y-2">
+              <Label>URL do vídeo</Label>
 
-            <Input
-              placeholder="https://exemplo.com/video.mp4"
-              value={videoUrl}
-              onChange={(event) => setVideoUrl(event.target.value)}
-              className="border-border bg-background text-foreground placeholder:text-muted-foreground"
-            />
+              <Input
+                placeholder="https://exemplo.com/video.mp4"
+                value={videoUrl}
+                onChange={(event) => setVideoUrl(event.target.value)}
+                className="border-border bg-background text-foreground placeholder:text-muted-foreground"
+              />
 
-            <div className="mt-3 flex h-32 flex-col items-center justify-center rounded-xl border-2 border-dashed border-primary/50 bg-background text-center">
-              <Video className="mb-3 text-primary" size={34} />
+              <p className="text-xs text-muted-foreground">
+                Você pode colar uma URL manualmente ou enviar um vídeo pelo
+                botão abaixo.
+              </p>
+            </div>
 
-              <strong className="text-sm text-primary">
-                Upload de vídeo será implementado depois
-              </strong>
+            <div className="rounded-xl border-2 border-dashed border-primary/50 bg-background p-4">
+              {videoUrl ? (
+                <div className="space-y-4">
+                  <video
+                    src={videoUrl}
+                    controls
+                    className="h-56 w-full rounded-xl border border-border bg-black object-contain"
+                  />
+
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <p className="max-w-[470px] truncate text-xs text-muted-foreground">
+                      {videoUrl}
+                    </p>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleRemoveVideo}
+                      disabled={loading || isUploading}
+                      className="border-red-200 bg-transparent text-red-600 hover:bg-red-50 hover:text-red-700"
+                    >
+                      <X size={16} />
+                      Remover vídeo
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex h-36 flex-col items-center justify-center text-center">
+                  <Video className="mb-3 text-primary" size={34} />
+
+                  <strong className="text-sm text-primary">
+                    Nenhum vídeo selecionado
+                  </strong>
+
+                  <span className="mt-1 text-xs text-muted-foreground">
+                    MP4, WEBM ou MOV até 50MB
+                  </span>
+                </div>
+              )}
+
+              <div className="mt-4 flex items-center justify-center">
+                <Label
+                  htmlFor="product-video-upload"
+                  className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90"
+                >
+                  {videoUploading ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      Enviando vídeo...
+                    </>
+                  ) : (
+                    <>
+                      <Upload size={16} />
+                      Enviar vídeo
+                    </>
+                  )}
+                </Label>
+
+                <Input
+                  id="product-video-upload"
+                  type="file"
+                  accept="video/mp4,video/webm,video/quicktime,video/*"
+                  onChange={handleVideoFileChange}
+                  disabled={loading || isUploading}
+                  className="hidden"
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -344,7 +585,7 @@ function ProductModalContent({
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
-            disabled={loading}
+            disabled={loading || isUploading}
             className="border-border bg-transparent text-foreground hover:bg-accent hover:text-foreground"
           >
             Cancelar
@@ -352,14 +593,18 @@ function ProductModalContent({
 
           <Button
             onClick={handleSubmit}
-            disabled={loading || categories.length === 0}
+            disabled={loading || isUploading || categories.length === 0}
             className="bg-primary text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {loading
               ? "Salvando..."
-              : isCreate
-                ? "Salvar produto"
-                : "Salvar alterações"}
+              : imageUploading
+                ? "Enviando imagem..."
+                : videoUploading
+                  ? "Enviando vídeo..."
+                  : isCreate
+                    ? "Salvar produto"
+                    : "Salvar alterações"}
           </Button>
         </div>
       </div>

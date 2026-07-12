@@ -1,17 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
 
 import {
   Clock,
   ImagePlus,
+  Loader2,
   MapPin,
   Phone,
   Save,
   Store,
   Trash2,
   Upload,
+  X,
 } from "lucide-react";
 
 import AdminSidebar from "../_components/adminSidebar";
@@ -40,6 +42,36 @@ import {
   type Restaurant,
 } from "@/services/restaurantService";
 
+import { uploadImage } from "@/services/uploadService";
+
+const allowedImageExtensions = [".jpg", ".jpeg", ".png", ".webp", ".gif"];
+
+function hasAllowedImageExtension(fileName: string) {
+  const normalizedFileName = fileName.toLowerCase();
+
+  return allowedImageExtensions.some((extension) =>
+    normalizedFileName.endsWith(extension),
+  );
+}
+
+function getImageValidationError(file: File) {
+  const isImage =
+    file.type.startsWith("image/") || hasAllowedImageExtension(file.name);
+
+  if (!isImage) {
+    return "Envie apenas arquivos de imagem.";
+  }
+
+  const maxSizeInMB = 5;
+  const maxSizeInBytes = maxSizeInMB * 1024 * 1024;
+
+  if (file.size > maxSizeInBytes) {
+    return `A imagem deve ter no máximo ${maxSizeInMB}MB.`;
+  }
+
+  return null;
+}
+
 export default function MenuSettingsPage() {
   const router = useRouter();
 
@@ -65,11 +97,15 @@ export default function MenuSettingsPage() {
   const [deletingBanner, setDeletingBanner] = useState(false);
   const [deleteBannerOpen, setDeleteBannerOpen] = useState(false);
 
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [bannerUploading, setBannerUploading] = useState(false);
+
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogTitle, setDialogTitle] = useState("");
   const [dialogDescription, setDialogDescription] = useState("");
 
   const restaurantIsBlocked = restaurant?.status === "BLOCKED";
+  const isUploading = logoUploading || bannerUploading;
 
   async function loadBanners(restaurantId: string) {
     try {
@@ -138,6 +174,92 @@ export default function MenuSettingsPage() {
       address: address.trim() || null,
       opening_hours: openingHours.trim() || null,
     };
+  }
+
+  async function handleLogoFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+
+    if (!file) return;
+
+    if (restaurantIsBlocked) {
+      alert("Restaurante bloqueado. Não é possível alterar a logo.");
+      event.target.value = "";
+      return;
+    }
+
+    const validationError = getImageValidationError(file);
+
+    if (validationError) {
+      alert(validationError);
+      event.target.value = "";
+      return;
+    }
+
+    try {
+      setLogoUploading(true);
+
+      const uploadedImage = await uploadImage({
+        file,
+        folder: "serviu/logos",
+      });
+
+      setLogoUrl(uploadedImage.secure_url);
+    } catch (error) {
+      console.error(error);
+
+      if (error instanceof Error) {
+        alert(error.message);
+        return;
+      }
+
+      alert("Erro ao enviar logo");
+    } finally {
+      setLogoUploading(false);
+      event.target.value = "";
+    }
+  }
+
+  async function handleBannerFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+
+    if (!file) return;
+
+    if (restaurantIsBlocked) {
+      alert("Restaurante bloqueado. Não é possível alterar banners.");
+      event.target.value = "";
+      return;
+    }
+
+    const validationError = getImageValidationError(file);
+
+    if (validationError) {
+      alert(validationError);
+      event.target.value = "";
+      return;
+    }
+
+    try {
+      setBannerUploading(true);
+
+      const uploadedImage = await uploadImage({
+        file,
+        folder: "serviu/banners",
+      });
+
+      setBannerImageUrl(uploadedImage.secure_url);
+    } catch (error) {
+      console.error(error);
+
+      if (error instanceof Error) {
+        alert(error.message);
+        return;
+      }
+
+      alert("Erro ao enviar banner");
+    } finally {
+      setBannerUploading(false);
+      event.target.value = "";
+    }
   }
 
   async function handleSaveRestaurantData() {
@@ -235,7 +357,7 @@ export default function MenuSettingsPage() {
     }
 
     if (!bannerImageUrl.trim()) {
-      alert("Informe a URL da imagem do banner");
+      alert("Informe a imagem do banner");
       return;
     }
 
@@ -466,18 +588,50 @@ export default function MenuSettingsPage() {
                   </div>
 
                   <div className="flex-1">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={restaurantIsBlocked}
-                      className="border-border bg-background text-foreground hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      <Upload size={16} />
-                      Alterar logo
-                    </Button>
+                    <div className="flex flex-wrap gap-3">
+                      <Label
+                        htmlFor="restaurant-logo-upload"
+                        className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-border bg-background px-4 text-sm font-medium text-foreground hover:bg-accent"
+                      >
+                        {logoUploading ? (
+                          <>
+                            <Loader2 size={16} className="animate-spin" />
+                            Enviando logo...
+                          </>
+                        ) : (
+                          <>
+                            <Upload size={16} />
+                            Alterar logo
+                          </>
+                        )}
+                      </Label>
+
+                      <Input
+                        id="restaurant-logo-upload"
+                        type="file"
+                        accept="image/*"
+                        disabled={restaurantIsBlocked || logoUploading}
+                        onChange={handleLogoFileChange}
+                        className="hidden"
+                      />
+
+                      {logoUrl && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          disabled={restaurantIsBlocked || logoUploading}
+                          onClick={() => setLogoUrl("")}
+                          className="border-red-500/20 bg-red-500/10 text-red-500 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <X size={16} />
+                          Remover logo
+                        </Button>
+                      )}
+                    </div>
 
                     <p className="mt-2 text-xs text-muted-foreground">
-                      Por enquanto use uma URL de imagem.
+                      Envie uma imagem PNG, JPG, JPEG ou WEBP até 5MB. Depois
+                      clique em salvar dados do restaurante.
                     </p>
 
                     <Input
@@ -493,13 +647,15 @@ export default function MenuSettingsPage() {
 
               <Button
                 onClick={handleSaveRestaurantData}
-                disabled={loadingRestaurant || restaurantIsBlocked}
+                disabled={loadingRestaurant || restaurantIsBlocked || isUploading}
                 className="w-full bg-primary text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Save size={16} />
                 {loadingRestaurant
                   ? "Salvando..."
-                  : "Salvar dados do restaurante"}
+                  : logoUploading
+                    ? "Enviando logo..."
+                    : "Salvar dados do restaurante"}
               </Button>
             </div>
           </div>
@@ -520,21 +676,51 @@ export default function MenuSettingsPage() {
 
             <div className="mb-5 rounded-xl border border-border bg-background p-4">
               <Label>
-                {editingBannerId ? "Editar URL do banner" : "Novo banner"}
+                {editingBannerId ? "Editar banner" : "Novo banner"}
               </Label>
 
-              <div className="mt-2 flex gap-3">
+              <div className="mt-2 flex flex-wrap gap-3">
                 <Input
                   value={bannerImageUrl}
                   disabled={restaurantIsBlocked}
                   onChange={(event) => setBannerImageUrl(event.target.value)}
                   placeholder="URL da imagem do banner"
-                  className="border-border bg-card text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                  className="min-w-[320px] flex-1 border-border bg-card text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                />
+
+                <Label
+                  htmlFor="banner-image-upload"
+                  className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 text-sm font-medium text-foreground hover:bg-accent"
+                >
+                  {bannerUploading ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      Enviando...
+                    </>
+                  ) : (
+                    <>
+                      <Upload size={16} />
+                      Enviar imagem
+                    </>
+                  )}
+                </Label>
+
+                <Input
+                  id="banner-image-upload"
+                  type="file"
+                  accept="image/*"
+                  disabled={restaurantIsBlocked || bannerUploading}
+                  onChange={handleBannerFileChange}
+                  className="hidden"
                 />
 
                 <Button
                   onClick={handleSaveBanner}
-                  disabled={savingBanner || restaurantIsBlocked}
+                  disabled={
+                    savingBanner ||
+                    bannerUploading ||
+                    restaurantIsBlocked
+                  }
                   className="bg-primary text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <Save size={16} />
@@ -550,7 +736,7 @@ export default function MenuSettingsPage() {
                     type="button"
                     variant="outline"
                     onClick={handleCancelEditBanner}
-                    disabled={savingBanner}
+                    disabled={savingBanner || bannerUploading}
                     className="border-border bg-card text-foreground hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     Cancelar
@@ -558,8 +744,36 @@ export default function MenuSettingsPage() {
                 )}
               </div>
 
+              {bannerImageUrl && (
+                <div className="mt-4 overflow-hidden rounded-xl border border-border bg-card">
+                  <img
+                    src={bannerImageUrl}
+                    alt="Prévia do banner"
+                    className="h-44 w-full object-cover"
+                  />
+
+                  <div className="flex items-center justify-between gap-3 p-3">
+                    <p className="truncate text-xs text-muted-foreground">
+                      {bannerImageUrl}
+                    </p>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={savingBanner || bannerUploading}
+                      onClick={() => setBannerImageUrl("")}
+                      className="border-red-500/20 bg-red-500/10 text-red-500 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <X size={16} />
+                      Remover
+                    </Button>
+                  </div>
+                </div>
+              )}
+
               <p className="mt-2 text-xs text-muted-foreground">
-                Por enquanto use uma URL de imagem. Limite: 3 banners.
+                Você pode colar uma URL ou enviar uma imagem. Limite: 3
+                banners.
               </p>
             </div>
 
@@ -730,7 +944,7 @@ export default function MenuSettingsPage() {
 
               <Button
                 onClick={handleSaveContactData}
-                disabled={loadingContact || restaurantIsBlocked}
+                disabled={loadingContact || restaurantIsBlocked || isUploading}
                 className="w-full bg-primary text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Save size={16} />

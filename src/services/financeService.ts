@@ -8,6 +8,22 @@ export type PaymentGatewayProvider = "MANUAL" | "ASAAS";
 
 export type AsaasBillingType = "BOLETO" | "PIX" | "CREDIT_CARD" | "UNDEFINED";
 
+export type AsaasChargeStatus =
+  | "NOT_REQUESTED"
+  | "GENERATED"
+  | "SKIPPED"
+  | "FAILED";
+
+export type PaymentReminderChannel = "EMAIL" | "WHATSAPP";
+
+export type PaymentReminderType =
+  | "BEFORE_DUE"
+  | "DUE_TODAY"
+  | "OVERDUE"
+  | "BLOCKED";
+
+export type PaymentReminderStatus = "PENDING" | "SENT" | "FAILED" | "SKIPPED";
+
 export type Payment = {
   id: string;
   owner_user_id: string;
@@ -57,17 +73,53 @@ export type Subscription = {
   restaurant_slug?: string;
 };
 
+export type PaymentReminder = {
+  id: string;
+  payment_id: string;
+  owner_user_id: string;
+
+  channel: PaymentReminderChannel;
+  reminder_type: PaymentReminderType;
+  reminder_date: string;
+
+  recipient: string | null;
+  subject: string | null;
+  message: string;
+
+  sent_at: string | null;
+  status: PaymentReminderStatus;
+  error_message: string | null;
+  metadata: Record<string, unknown> | null;
+
+  created_at: string;
+  updated_at: string;
+
+  owner_name: string | null;
+  owner_email: string | null;
+
+  amount: number | null;
+  due_date: string | null;
+  payment_status: PaymentStatus | null;
+
+  gateway_provider: PaymentGatewayProvider | null;
+  gateway_status: string | null;
+  gateway_invoice_url: string | null;
+  gateway_payment_url: string | null;
+};
+
 export type CreatePaymentData = {
   owner_user_id?: string;
   restaurant_id?: string | null;
   subscription_id: string;
   amount: number;
   due_date: string;
-  status?: PaymentStatus;
+  status?: "PENDING";
+  create_asaas_charge?: boolean;
 };
 
 export type GenerateMonthlyPaymentsData = {
   up_to_date?: string;
+  create_asaas_charges?: boolean;
 };
 
 export type GenerateMonthlyPaymentSummary = {
@@ -80,13 +132,19 @@ export type GenerateMonthlyPaymentSummary = {
   payment: Payment | null;
   status: "GENERATED" | "SKIPPED";
   reason?: string;
+  asaas_charge_status?: AsaasChargeStatus;
+  asaas_charge_error?: string;
 };
 
 export type GenerateMonthlyPaymentsResult = {
   up_to_date: string;
+  create_asaas_charges: boolean;
   total_subscriptions_ready: number;
   generated_count: number;
   skipped_count: number;
+  asaas_generated_count: number;
+  asaas_failed_count: number;
+  asaas_skipped_count: number;
   summaries: GenerateMonthlyPaymentSummary[];
 };
 
@@ -117,6 +175,21 @@ export async function getSubscriptions(): Promise<Subscription[]> {
   if (!response.ok) {
     throw new Error(
       await getApiErrorMessage(response, "Erro ao buscar assinaturas"),
+    );
+  }
+
+  return response.json();
+}
+
+export async function getPaymentReminders(): Promise<PaymentReminder[]> {
+  const response = await apiFetch("/payment-reminders");
+
+  if (!response.ok) {
+    throw new Error(
+      await getApiErrorMessage(
+        response,
+        "Erro ao carregar histórico de lembretes",
+      ),
     );
   }
 

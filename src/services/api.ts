@@ -15,13 +15,19 @@ export async function apiFetch(
   path: string,
   options: ApiFetchOptions = {},
 ) {
-  const { skipJsonContentType, headers, ...rest } = options;
+  const { skipJsonContentType, headers, body, ...rest } = options;
+
+  const isFormData =
+    typeof FormData !== "undefined" && body instanceof FormData;
 
   return fetch(`${API_URL}${path}`, {
     ...rest,
+    body,
     credentials: "include",
     headers: {
-      ...(skipJsonContentType ? {} : { "Content-Type": "application/json" }),
+      ...(skipJsonContentType || isFormData
+        ? {}
+        : { "Content-Type": "application/json" }),
       ...headers,
     },
   });

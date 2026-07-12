@@ -28,17 +28,23 @@ import {
   createAsaasCharge,
   createPayment,
   generateMonthlyPayments,
+  getPaymentReminders,
   getPayments,
   getSubscriptions,
   markPaymentAsPaid,
   type Payment,
   type PaymentGatewayProvider,
+  type PaymentReminder,
+  type PaymentReminderChannel,
+  type PaymentReminderStatus,
+  type PaymentReminderType,
   type PaymentStatus,
   type Subscription,
 } from "@/services/financeService";
 
+type FinanceTab = "PAYMENTS" | "REMINDERS";
 type PaymentStatusFilter = PaymentStatus | "ALL";
-type NewPaymentStatus = "PENDING" | "PAID";
+type ReminderStatusFilter = PaymentReminderStatus | "ALL";
 type MetricsPeriod = "CURRENT_MONTH" | "ALL" | "CUSTOM_MONTH";
 
 const statusStyles: Record<PaymentStatus, string> = {
@@ -71,6 +77,37 @@ const metricsPeriodLabels: Record<MetricsPeriod, string> = {
   CUSTOM_MONTH: "Mês específico",
 };
 
+const reminderTypeLabels: Record<PaymentReminderType, string> = {
+  BEFORE_DUE: "Antes do vencimento",
+  DUE_TODAY: "Vence hoje",
+  OVERDUE: "Atrasado",
+  BLOCKED: "Bloqueado",
+};
+
+const reminderStatusLabels: Record<PaymentReminderStatus, string> = {
+  PENDING: "Pendente",
+  SENT: "Enviado",
+  FAILED: "Falhou",
+  SKIPPED: "Ignorado",
+};
+
+const reminderStatusStyles: Record<PaymentReminderStatus, string> = {
+  PENDING: "bg-yellow-100 text-yellow-700",
+  SENT: "bg-green-100 text-green-700",
+  FAILED: "bg-red-100 text-red-700",
+  SKIPPED: "bg-zinc-100 text-zinc-700",
+};
+
+const reminderChannelLabels: Record<PaymentReminderChannel, string> = {
+  EMAIL: "E-mail",
+  WHATSAPP: "WhatsApp",
+};
+
+const reminderChannelStyles: Record<PaymentReminderChannel, string> = {
+  EMAIL: "bg-blue-100 text-blue-700",
+  WHATSAPP: "bg-green-100 text-green-700",
+};
+
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("pt-BR", {
     style: "currency",
@@ -87,6 +124,21 @@ function formatDate(date: string) {
   if (!year || !month || !day) return date;
 
   return `${day}/${month}/${year}`;
+}
+
+function formatDateTime(date: string | null) {
+  if (!date) return "-";
+
+  const parsedDate = new Date(date);
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    return formatDate(date);
+  }
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(parsedDate);
 }
 
 function getDateInputValue(daysToAdd = 30) {
@@ -184,6 +236,10 @@ function getPaymentInvoiceUrl(payment: Payment) {
   return payment.gateway_invoice_url ?? payment.gateway_payment_url ?? "";
 }
 
+function getReminderInvoiceUrl(reminder: PaymentReminder) {
+  return reminder.gateway_invoice_url ?? reminder.gateway_payment_url ?? "";
+}
+
 function canGenerateAsaasCharge(payment: Payment) {
   return (
     payment.status === "PENDING" &&
@@ -227,20 +283,24 @@ function getPaymentsByPeriod(
 }
 
 async function fetchFinanceData() {
-  const [paymentsData, subscriptionsData] = await Promise.all([
+  const [paymentsData, subscriptionsData, remindersData] = await Promise.all([
     getPayments(),
     getSubscriptions(),
+    getPaymentReminders(),
   ]);
 
   return {
     paymentsData,
     subscriptionsData,
+    remindersData,
   };
 }
 
 export default function MasterFinanceiroPage() {
   const [payments, setPayments] = useState<Payment[]>([]);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
+  const [reminders, setReminders] = useState<PaymentReminder[]>([]);
+
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [asaasChargeLoading, setAsaasChargeLoading] = useState<string | null>(
@@ -249,11 +309,17 @@ export default function MasterFinanceiroPage() {
   const [generateMonthlyLoading, setGenerateMonthlyLoading] = useState(false);
   const [error, setError] = useState("");
 
+  const [activeTab, setActiveTab] = useState<FinanceTab>("PAYMENTS");
+
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<PaymentStatusFilter>("ALL");
   const [metricsPeriod, setMetricsPeriod] =
     useState<MetricsPeriod>("CURRENT_MONTH");
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthKey());
+
+  const [reminderSearchTerm, setReminderSearchTerm] = useState("");
+  const [reminderStatusFilter, setReminderStatusFilter] =
+    useState<ReminderStatusFilter>("ALL");
 
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [createLoading, setCreateLoading] = useState(false);
@@ -262,8 +328,6 @@ export default function MasterFinanceiroPage() {
   const [newPaymentDueDate, setNewPaymentDueDate] = useState(
     getDateInputValue(30),
   );
-  const [newPaymentStatus, setNewPaymentStatus] =
-    useState<NewPaymentStatus>("PENDING");
 
   const availableSubscriptions = useMemo(() => {
     return subscriptions.filter(
@@ -307,10 +371,12 @@ export default function MasterFinanceiroPage() {
       setLoading(true);
       setError("");
 
-      const { paymentsData, subscriptionsData } = await fetchFinanceData();
+      const { paymentsData, subscriptionsData, remindersData } =
+        await fetchFinanceData();
 
       setPayments(paymentsData);
       setSubscriptions(subscriptionsData);
+      setReminders(remindersData);
     } catch (err) {
       const message =
         err instanceof Error
@@ -328,12 +394,14 @@ export default function MasterFinanceiroPage() {
 
     async function loadInitialFinanceData() {
       try {
-        const { paymentsData, subscriptionsData } = await fetchFinanceData();
+        const { paymentsData, subscriptionsData, remindersData } =
+          await fetchFinanceData();
 
         if (!isMounted) return;
 
         setPayments(paymentsData);
         setSubscriptions(subscriptionsData);
+        setReminders(remindersData);
       } catch (err) {
         if (!isMounted) return;
 
@@ -398,6 +466,23 @@ export default function MasterFinanceiroPage() {
     };
   }, [periodPayments, subscriptions]);
 
+  const reminderMetrics = useMemo(() => {
+    const sent = reminders.filter((reminder) => reminder.status === "SENT");
+    const failed = reminders.filter((reminder) => reminder.status === "FAILED");
+    const email = reminders.filter((reminder) => reminder.channel === "EMAIL");
+    const whatsapp = reminders.filter(
+      (reminder) => reminder.channel === "WHATSAPP",
+    );
+
+    return {
+      total: reminders.length,
+      sent: sent.length,
+      failed: failed.length,
+      email: email.length,
+      whatsapp: whatsapp.length,
+    };
+  }, [reminders]);
+
   const filteredPayments = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
 
@@ -429,11 +514,59 @@ export default function MasterFinanceiroPage() {
     });
   }, [periodPayments, searchTerm, statusFilter]);
 
+  const filteredReminders = useMemo(() => {
+    const normalizedSearch = reminderSearchTerm.trim().toLowerCase();
+
+    return reminders.filter((reminder) => {
+      const matchesStatus =
+        reminderStatusFilter === "ALL" ||
+        reminder.status === reminderStatusFilter;
+
+      const amountText =
+        typeof reminder.amount === "number"
+          ? formatCurrency(reminder.amount)
+          : "";
+
+      const searchableContent = [
+        reminder.owner_name ?? "",
+        reminder.owner_email ?? "",
+        reminder.recipient ?? "",
+        reminder.subject ?? "",
+        reminder.message ?? "",
+        reminder.channel ? reminderChannelLabels[reminder.channel] : "",
+        reminder.reminder_type
+          ? reminderTypeLabels[reminder.reminder_type]
+          : "",
+        reminder.status ? reminderStatusLabels[reminder.status] : "",
+        reminder.gateway_status ?? "",
+        amountText,
+        reminder.due_date ? formatDate(reminder.due_date) : "",
+        reminder.reminder_date ? formatDate(reminder.reminder_date) : "",
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      const matchesSearch =
+        normalizedSearch.length === 0 ||
+        searchableContent.includes(normalizedSearch);
+
+      return matchesStatus && matchesSearch;
+    });
+  }, [reminders, reminderSearchTerm, reminderStatusFilter]);
+
   const hasActiveFilters = searchTerm.trim() !== "" || statusFilter !== "ALL";
+
+  const hasActiveReminderFilters =
+    reminderSearchTerm.trim() !== "" || reminderStatusFilter !== "ALL";
 
   function clearFilters() {
     setSearchTerm("");
     setStatusFilter("ALL");
+  }
+
+  function clearReminderFilters() {
+    setReminderSearchTerm("");
+    setReminderStatusFilter("ALL");
   }
 
   function handleMetricsPeriodChange(value: MetricsPeriod) {
@@ -459,7 +592,6 @@ export default function MasterFinanceiroPage() {
 
     setNewPaymentAmount("59,90");
     setNewPaymentDueDate(getDateInputValue(30));
-    setNewPaymentStatus("PENDING");
     setCreateModalOpen(true);
   }
 
@@ -480,6 +612,17 @@ export default function MasterFinanceiroPage() {
     window.open(invoiceUrl, "_blank", "noopener,noreferrer");
   }
 
+  function handleOpenReminderInvoice(reminder: PaymentReminder) {
+    const invoiceUrl = getReminderInvoiceUrl(reminder);
+
+    if (!invoiceUrl) {
+      alert("Este lembrete não possui link de pagamento.");
+      return;
+    }
+
+    window.open(invoiceUrl, "_blank", "noopener,noreferrer");
+  }
+
   async function handleGenerateMonthlyPayments() {
     const confirmed = window.confirm(
       "Deseja gerar as faturas mensais das assinaturas ativas? O sistema não vai duplicar meses que já possuem fatura pendente, paga ou atrasada.",
@@ -490,7 +633,9 @@ export default function MasterFinanceiroPage() {
     try {
       setGenerateMonthlyLoading(true);
 
-      const result = await generateMonthlyPayments();
+      const result = await generateMonthlyPayments({
+        create_asaas_charges: true,
+      });
 
       alert(
         [
@@ -498,6 +643,9 @@ export default function MasterFinanceiroPage() {
           `Assinaturas prontas: ${result.total_subscriptions_ready}`,
           `Faturas geradas: ${result.generated_count}`,
           `Faturas puladas: ${result.skipped_count}`,
+          `Cobranças Asaas geradas: ${result.asaas_generated_count}`,
+          `Cobranças Asaas com erro: ${result.asaas_failed_count}`,
+          `Cobranças Asaas puladas: ${result.asaas_skipped_count}`,
         ].join("\n"),
       );
 
@@ -546,16 +694,11 @@ export default function MasterFinanceiroPage() {
         amount,
         due_date: newPaymentDueDate,
         status: "PENDING",
+        create_asaas_charge: true,
       });
 
-      let finalPayment = createdPayment;
-
-      if (newPaymentStatus === "PAID") {
-        finalPayment = await markPaymentAsPaid(createdPayment.id);
-      }
-
       const paymentWithDetails: Payment = {
-        ...finalPayment,
+        ...createdPayment,
         owner_name: selectedSubscription.owner_name,
         owner_email: selectedSubscription.owner_email,
         total_restaurants: selectedSubscription.total_restaurants,
@@ -569,6 +712,18 @@ export default function MasterFinanceiroPage() {
       ]);
 
       setCreateModalOpen(false);
+
+      const invoiceUrl = getPaymentInvoiceUrl(createdPayment);
+
+      if (invoiceUrl) {
+        const openInvoice = window.confirm(
+          "Fatura criada no Asaas com sucesso. Deseja abrir o link de pagamento agora?",
+        );
+
+        if (openInvoice) {
+          window.open(invoiceUrl, "_blank", "noopener,noreferrer");
+        }
+      }
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Erro ao criar fatura";
@@ -630,6 +785,15 @@ export default function MasterFinanceiroPage() {
   }
 
   async function handleMarkAsPaid(payment: Payment) {
+    const gatewayProvider = getPaymentGatewayProvider(payment);
+
+    if (gatewayProvider === "ASAAS") {
+      alert(
+        "Faturas Asaas devem ser marcadas como pagas automaticamente pelo webhook do Asaas.",
+      );
+      return;
+    }
+
     const confirmed = window.confirm("Deseja marcar esta fatura como paga?");
 
     if (!confirmed) return;
@@ -710,6 +874,35 @@ export default function MasterFinanceiroPage() {
     );
   }
 
+  function handleViewReminder(reminder: PaymentReminder) {
+    const invoiceUrl = getReminderInvoiceUrl(reminder);
+
+    alert(
+      [
+        `Cliente/Dono: ${reminder.owner_name ?? "Não informado"}`,
+        `E-mail do dono: ${reminder.owner_email ?? "-"}`,
+        `Destinatário: ${reminder.recipient ?? "-"}`,
+        `Canal: ${reminderChannelLabels[reminder.channel]}`,
+        `Tipo: ${reminderTypeLabels[reminder.reminder_type]}`,
+        `Status: ${reminderStatusLabels[reminder.status]}`,
+        `Data do lembrete: ${formatDate(reminder.reminder_date)}`,
+        `Enviado em: ${formatDateTime(reminder.sent_at)}`,
+        `Valor da fatura: ${
+          typeof reminder.amount === "number"
+            ? formatCurrency(reminder.amount)
+            : "-"
+        }`,
+        `Vencimento: ${reminder.due_date ? formatDate(reminder.due_date) : "-"}`,
+        `Status da fatura: ${reminder.payment_status ?? "-"}`,
+        `Gateway: ${reminder.gateway_provider ?? "-"}`,
+        `Status Gateway: ${reminder.gateway_status ?? "-"}`,
+        `Assunto: ${reminder.subject ?? "-"}`,
+        `Link da fatura: ${invoiceUrl || "-"}`,
+        `Erro: ${reminder.error_message ?? "-"}`,
+      ].join("\n"),
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <MasterSidebar />
@@ -723,7 +916,8 @@ export default function MasterFinanceiroPage() {
               <h1 className="text-3xl font-bold">Financeiro</h1>
 
               <p className="text-muted-foreground">
-                Gerencie receitas, cobranças e pagamentos reais da plataforma.
+                Gerencie receitas, cobranças, pagamentos e lembretes da
+                plataforma.
               </p>
             </div>
 
@@ -780,7 +974,8 @@ export default function MasterFinanceiroPage() {
               <p className="text-sm font-medium">Período do financeiro</p>
 
               <p className="text-xs text-muted-foreground">
-                Os cards e a tabela abaixo mudam conforme o período escolhido.
+                Os cards e a tabela de cobranças mudam conforme o período
+                escolhido.
               </p>
             </div>
 
@@ -855,248 +1050,489 @@ export default function MasterFinanceiroPage() {
           <div className="mt-6 grid gap-6 xl:grid-cols-[1fr_320px]">
             <div className="rounded-xl border border-border bg-card">
               <div className="border-b border-border p-6">
-                <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
-                  <div>
-                    <h2 className="text-lg font-semibold">Cobranças</h2>
+                <div className="mb-5 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("PAYMENTS")}
+                    className={`rounded-lg px-4 py-2 text-sm font-medium transition ${
+                      activeTab === "PAYMENTS"
+                        ? "bg-primary text-primary-foreground"
+                        : "border border-border hover:bg-accent"
+                    }`}
+                  >
+                    Cobranças
+                  </button>
 
-                    <p className="text-sm text-muted-foreground">
-                      Faturas do período: {selectedPeriodLabel}.
-                    </p>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("REMINDERS")}
+                    className={`rounded-lg px-4 py-2 text-sm font-medium transition ${
+                      activeTab === "REMINDERS"
+                        ? "bg-primary text-primary-foreground"
+                        : "border border-border hover:bg-accent"
+                    }`}
+                  >
+                    Lembretes
+                  </button>
+                </div>
 
-                  <div className="flex flex-col gap-3 md:flex-row md:items-center">
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                {activeTab === "PAYMENTS" ? (
+                  <>
+                    <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+                      <div>
+                        <h2 className="text-lg font-semibold">Cobranças</h2>
 
-                      <input
-                        value={searchTerm}
-                        onChange={(event) => setSearchTerm(event.target.value)}
-                        placeholder="Pesquisar cliente, e-mail, plano, gateway..."
-                        className="h-10 w-full rounded-lg border border-border bg-background pl-10 pr-4 text-sm outline-none focus:border-primary md:w-80"
-                      />
+                        <p className="text-sm text-muted-foreground">
+                          Faturas do período: {selectedPeriodLabel}.
+                        </p>
+                      </div>
+
+                      <div className="flex flex-col gap-3 md:flex-row md:items-center">
+                        <div className="relative">
+                          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+
+                          <input
+                            value={searchTerm}
+                            onChange={(event) =>
+                              setSearchTerm(event.target.value)
+                            }
+                            placeholder="Pesquisar cliente, e-mail, plano, gateway..."
+                            className="h-10 w-full rounded-lg border border-border bg-background pl-10 pr-4 text-sm outline-none focus:border-primary md:w-80"
+                          />
+                        </div>
+
+                        <select
+                          value={statusFilter}
+                          onChange={(event) =>
+                            setStatusFilter(
+                              event.target.value as PaymentStatusFilter,
+                            )
+                          }
+                          className="h-10 rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-primary"
+                        >
+                          <option value="ALL">Todos os status</option>
+                          <option value="PAID">Pago</option>
+                          <option value="PENDING">Pendente</option>
+                          <option value="OVERDUE">Atrasado</option>
+                          <option value="CANCELED">Cancelado</option>
+                        </select>
+
+                        {hasActiveFilters && (
+                          <button
+                            type="button"
+                            onClick={clearFilters}
+                            className="flex h-10 items-center justify-center gap-2 rounded-lg border border-border px-3 text-sm font-medium hover:bg-accent"
+                          >
+                            <X className="h-4 w-4" />
+                            Limpar
+                          </button>
+                        )}
+                      </div>
                     </div>
 
-                    <select
-                      value={statusFilter}
-                      onChange={(event) =>
-                        setStatusFilter(
-                          event.target.value as PaymentStatusFilter,
-                        )
-                      }
-                      className="h-10 rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-primary"
-                    >
-                      <option value="ALL">Todos os status</option>
-                      <option value="PAID">Pago</option>
-                      <option value="PENDING">Pendente</option>
-                      <option value="OVERDUE">Atrasado</option>
-                      <option value="CANCELED">Cancelado</option>
-                    </select>
+                    <div className="mt-4 text-xs text-muted-foreground">
+                      Mostrando {filteredPayments.length} de{" "}
+                      {periodPayments.length} faturas do período. Total geral no
+                      banco: {payments.length}.
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+                      <div>
+                        <h2 className="text-lg font-semibold">
+                          Histórico de lembretes
+                        </h2>
 
-                    {hasActiveFilters && (
-                      <button
-                        type="button"
-                        onClick={clearFilters}
-                        className="flex h-10 items-center justify-center gap-2 rounded-lg border border-border px-3 text-sm font-medium hover:bg-accent"
-                      >
-                        <X className="h-4 w-4" />
-                        Limpar
-                      </button>
-                    )}
-                  </div>
-                </div>
+                        <p className="text-sm text-muted-foreground">
+                          Lembretes enviados por e-mail ou WhatsApp.
+                        </p>
+                      </div>
 
-                <div className="mt-4 text-xs text-muted-foreground">
-                  Mostrando {filteredPayments.length} de {periodPayments.length}{" "}
-                  faturas do período. Total geral no banco: {payments.length}.
-                </div>
+                      <div className="flex flex-col gap-3 md:flex-row md:items-center">
+                        <div className="relative">
+                          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+
+                          <input
+                            value={reminderSearchTerm}
+                            onChange={(event) =>
+                              setReminderSearchTerm(event.target.value)
+                            }
+                            placeholder="Pesquisar cliente, e-mail, assunto..."
+                            className="h-10 w-full rounded-lg border border-border bg-background pl-10 pr-4 text-sm outline-none focus:border-primary md:w-80"
+                          />
+                        </div>
+
+                        <select
+                          value={reminderStatusFilter}
+                          onChange={(event) =>
+                            setReminderStatusFilter(
+                              event.target.value as ReminderStatusFilter,
+                            )
+                          }
+                          className="h-10 rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-primary"
+                        >
+                          <option value="ALL">Todos os status</option>
+                          <option value="PENDING">Pendente</option>
+                          <option value="SENT">Enviado</option>
+                          <option value="FAILED">Falhou</option>
+                          <option value="SKIPPED">Ignorado</option>
+                        </select>
+
+                        {hasActiveReminderFilters && (
+                          <button
+                            type="button"
+                            onClick={clearReminderFilters}
+                            className="flex h-10 items-center justify-center gap-2 rounded-lg border border-border px-3 text-sm font-medium hover:bg-accent"
+                          >
+                            <X className="h-4 w-4" />
+                            Limpar
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="mt-4 text-xs text-muted-foreground">
+                      Mostrando {filteredReminders.length} de{" "}
+                      {reminders.length} lembrete(s).
+                    </div>
+                  </>
+                )}
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead className="border-b border-border bg-muted/40">
-                    <tr>
-                      <th className="px-5 py-4 font-medium">Cliente/Dono</th>
-                      <th className="px-5 py-4 font-medium">E-mail</th>
-                      <th className="px-5 py-4 font-medium">Restaurantes</th>
-                      <th className="px-5 py-4 font-medium">Plano</th>
-                      <th className="px-5 py-4 font-medium">Valor</th>
-                      <th className="px-5 py-4 font-medium">Vencimento</th>
-                      <th className="px-5 py-4 font-medium">Gateway</th>
-                      <th className="px-5 py-4 font-medium">Status</th>
-                      <th className="px-5 py-4 text-right font-medium">
-                        Ações
-                      </th>
-                    </tr>
-                  </thead>
-
-                  <tbody className="divide-y divide-border">
-                    {loading ? (
+              {activeTab === "PAYMENTS" ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="border-b border-border bg-muted/40">
                       <tr>
-                        <td
-                          colSpan={9}
-                          className="px-5 py-10 text-center text-muted-foreground"
-                        >
-                          <div className="flex items-center justify-center gap-2">
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                            Carregando financeiro...
-                          </div>
-                        </td>
+                        <th className="px-5 py-4 font-medium">Cliente/Dono</th>
+                        <th className="px-5 py-4 font-medium">E-mail</th>
+                        <th className="px-5 py-4 font-medium">Restaurantes</th>
+                        <th className="px-5 py-4 font-medium">Plano</th>
+                        <th className="px-5 py-4 font-medium">Valor</th>
+                        <th className="px-5 py-4 font-medium">Vencimento</th>
+                        <th className="px-5 py-4 font-medium">Gateway</th>
+                        <th className="px-5 py-4 font-medium">Status</th>
+                        <th className="px-5 py-4 text-right font-medium">
+                          Ações
+                        </th>
                       </tr>
-                    ) : filteredPayments.length === 0 ? (
-                      <tr>
-                        <td
-                          colSpan={9}
-                          className="px-5 py-10 text-center text-muted-foreground"
-                        >
-                          Nenhuma fatura encontrada neste período/filtro.
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredPayments.map((payment) => {
-                        const status = getEffectiveStatus(payment);
-                        const gatewayProvider =
-                          getPaymentGatewayProvider(payment);
-                        const invoiceUrl = getPaymentInvoiceUrl(payment);
+                    </thead>
 
-                        const isPaid = payment.status === "PAID";
-                        const isCanceled = payment.status === "CANCELED";
-                        const isCurrentActionLoading =
-                          actionLoading === payment.id;
-                        const isCurrentAsaasChargeLoading =
-                          asaasChargeLoading === payment.id;
-                        const isAnyPaymentActionLoading =
-                          isCurrentActionLoading || isCurrentAsaasChargeLoading;
+                    <tbody className="divide-y divide-border">
+                      {loading ? (
+                        <tr>
+                          <td
+                            colSpan={9}
+                            className="px-5 py-10 text-center text-muted-foreground"
+                          >
+                            <div className="flex items-center justify-center gap-2">
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              Carregando financeiro...
+                            </div>
+                          </td>
+                        </tr>
+                      ) : filteredPayments.length === 0 ? (
+                        <tr>
+                          <td
+                            colSpan={9}
+                            className="px-5 py-10 text-center text-muted-foreground"
+                          >
+                            Nenhuma fatura encontrada neste período/filtro.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredPayments.map((payment) => {
+                          const status = getEffectiveStatus(payment);
+                          const gatewayProvider =
+                            getPaymentGatewayProvider(payment);
+                          const isAsaasPayment = gatewayProvider === "ASAAS";
+                          const invoiceUrl = getPaymentInvoiceUrl(payment);
 
-                        return (
-                          <tr key={payment.id} className="hover:bg-accent/50">
-                            <td className="px-5 py-4 font-medium">
-                              {payment.owner_name ?? "Cliente não informado"}
-                            </td>
+                          const isPaid = payment.status === "PAID";
+                          const isCanceled = payment.status === "CANCELED";
+                          const isCurrentActionLoading =
+                            actionLoading === payment.id;
+                          const isCurrentAsaasChargeLoading =
+                            asaasChargeLoading === payment.id;
+                          const isAnyPaymentActionLoading =
+                            isCurrentActionLoading ||
+                            isCurrentAsaasChargeLoading;
 
-                            <td className="px-5 py-4 text-muted-foreground">
-                              {payment.owner_email ?? "-"}
-                            </td>
+                          return (
+                            <tr key={payment.id} className="hover:bg-accent/50">
+                              <td className="px-5 py-4 font-medium">
+                                {payment.owner_name ?? "Cliente não informado"}
+                              </td>
 
-                            <td className="px-5 py-4 text-muted-foreground">
-                              {payment.total_restaurants ?? 0}
-                            </td>
+                              <td className="px-5 py-4 text-muted-foreground">
+                                {payment.owner_email ?? "-"}
+                              </td>
 
-                            <td className="px-5 py-4 text-muted-foreground">
-                              {payment.plan_name ?? "Serviu Completo"}
-                            </td>
+                              <td className="px-5 py-4 text-muted-foreground">
+                                {payment.total_restaurants ?? 0}
+                              </td>
 
-                            <td className="px-5 py-4 text-muted-foreground">
-                              {formatCurrency(payment.amount)}
-                            </td>
+                              <td className="px-5 py-4 text-muted-foreground">
+                                {payment.plan_name ?? "Serviu Completo"}
+                              </td>
 
-                            <td className="px-5 py-4 text-muted-foreground">
-                              {formatDate(payment.due_date)}
-                            </td>
+                              <td className="px-5 py-4 text-muted-foreground">
+                                {formatCurrency(payment.amount)}
+                              </td>
 
-                            <td className="px-5 py-4">
-                              <div className="flex flex-col gap-1">
-                                <span
-                                  className={`w-fit rounded-full px-3 py-1 text-xs font-medium ${gatewayStyles[gatewayProvider]}`}
-                                >
-                                  {gatewayLabels[gatewayProvider]}
-                                </span>
+                              <td className="px-5 py-4 text-muted-foreground">
+                                {formatDate(payment.due_date)}
+                              </td>
 
-                                {payment.gateway_status && (
-                                  <span className="text-xs text-muted-foreground">
-                                    {payment.gateway_status}
+                              <td className="px-5 py-4">
+                                <div className="flex flex-col gap-1">
+                                  <span
+                                    className={`w-fit rounded-full px-3 py-1 text-xs font-medium ${gatewayStyles[gatewayProvider]}`}
+                                  >
+                                    {gatewayLabels[gatewayProvider]}
                                   </span>
-                                )}
-                              </div>
-                            </td>
 
-                            <td className="px-5 py-4">
-                              <span
-                                className={`rounded-full px-3 py-1 text-xs font-medium ${statusStyles[status]}`}
-                              >
-                                {statusLabels[status]}
-                              </span>
-                            </td>
+                                  {payment.gateway_status && (
+                                    <span className="text-xs text-muted-foreground">
+                                      {payment.gateway_status}
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
 
-                            <td className="px-5 py-4">
-                              <div className="flex flex-wrap justify-end gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => handleViewPayment(payment)}
-                                  className="rounded-lg border border-border p-2 hover:bg-accent"
-                                  title="Ver detalhes"
+                              <td className="px-5 py-4">
+                                <span
+                                  className={`rounded-full px-3 py-1 text-xs font-medium ${statusStyles[status]}`}
                                 >
-                                  <Eye size={16} />
-                                </button>
+                                  {statusLabels[status]}
+                                </span>
+                              </td>
 
-                                {invoiceUrl && (
+                              <td className="px-5 py-4">
+                                <div className="flex flex-wrap justify-end gap-2">
                                   <button
                                     type="button"
-                                    onClick={() => handleOpenInvoice(payment)}
-                                    className="rounded-lg border border-border p-2 text-blue-700 hover:bg-blue-50"
-                                    title="Abrir fatura Asaas"
+                                    onClick={() => handleViewPayment(payment)}
+                                    className="rounded-lg border border-border p-2 hover:bg-accent"
+                                    title="Ver detalhes"
                                   >
-                                    <ExternalLink size={16} />
+                                    <Eye size={16} />
                                   </button>
-                                )}
 
-                                {canGenerateAsaasCharge(payment) && (
+                                  {invoiceUrl && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenInvoice(payment)}
+                                      className="rounded-lg border border-border p-2 text-blue-700 hover:bg-blue-50"
+                                      title="Abrir fatura Asaas"
+                                    >
+                                      <ExternalLink size={16} />
+                                    </button>
+                                  )}
+
+                                  {canGenerateAsaasCharge(payment) && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleCreateAsaasCharge(payment)
+                                      }
+                                      disabled={isAnyPaymentActionLoading}
+                                      className="rounded-lg border border-border p-2 text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-40"
+                                      title="Gerar cobrança Asaas"
+                                    >
+                                      {isCurrentAsaasChargeLoading ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                      ) : (
+                                        <CreditCard size={16} />
+                                      )}
+                                    </button>
+                                  )}
+
                                   <button
                                     type="button"
-                                    onClick={() =>
-                                      handleCreateAsaasCharge(payment)
+                                    onClick={() => handleMarkAsPaid(payment)}
+                                    disabled={
+                                      isPaid ||
+                                      isCanceled ||
+                                      isAsaasPayment ||
+                                      isAnyPaymentActionLoading
                                     }
-                                    disabled={isAnyPaymentActionLoading}
-                                    className="rounded-lg border border-border p-2 text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-40"
-                                    title="Gerar cobrança Asaas"
+                                    className="rounded-lg border border-border p-2 text-green-700 hover:bg-green-50 disabled:cursor-not-allowed disabled:opacity-40"
+                                    title={
+                                      isAsaasPayment
+                                        ? "Pagamento Asaas é confirmado automaticamente pelo webhook"
+                                        : "Marcar como paga"
+                                    }
                                   >
-                                    {isCurrentAsaasChargeLoading ? (
+                                    {isCurrentActionLoading ? (
                                       <Loader2 className="h-4 w-4 animate-spin" />
                                     ) : (
-                                      <CreditCard size={16} />
+                                      <CheckCircle size={16} />
                                     )}
                                   </button>
-                                )}
 
-                                <button
-                                  type="button"
-                                  onClick={() => handleMarkAsPaid(payment)}
-                                  disabled={
-                                    isPaid ||
-                                    isCanceled ||
-                                    isAnyPaymentActionLoading
-                                  }
-                                  className="rounded-lg border border-border p-2 text-green-700 hover:bg-green-50 disabled:cursor-not-allowed disabled:opacity-40"
-                                  title="Marcar como paga"
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCancelPayment(payment)}
+                                    disabled={
+                                      isPaid ||
+                                      isCanceled ||
+                                      isAnyPaymentActionLoading
+                                    }
+                                    className="rounded-lg border border-border p-2 text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
+                                    title="Cancelar fatura"
+                                  >
+                                    <XCircle size={16} />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="border-b border-border bg-muted/40">
+                      <tr>
+                        <th className="px-5 py-4 font-medium">Cliente</th>
+                        <th className="px-5 py-4 font-medium">Destinatário</th>
+                        <th className="px-5 py-4 font-medium">Canal</th>
+                        <th className="px-5 py-4 font-medium">Tipo</th>
+                        <th className="px-5 py-4 font-medium">Status</th>
+                        <th className="px-5 py-4 font-medium">Fatura</th>
+                        <th className="px-5 py-4 font-medium">Vencimento</th>
+                        <th className="px-5 py-4 font-medium">Enviado em</th>
+                        <th className="px-5 py-4 font-medium">Erro</th>
+                        <th className="px-5 py-4 text-right font-medium">
+                          Ações
+                        </th>
+                      </tr>
+                    </thead>
+
+                    <tbody className="divide-y divide-border">
+                      {loading ? (
+                        <tr>
+                          <td
+                            colSpan={10}
+                            className="px-5 py-10 text-center text-muted-foreground"
+                          >
+                            <div className="flex items-center justify-center gap-2">
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              Carregando lembretes...
+                            </div>
+                          </td>
+                        </tr>
+                      ) : filteredReminders.length === 0 ? (
+                        <tr>
+                          <td
+                            colSpan={10}
+                            className="px-5 py-10 text-center text-muted-foreground"
+                          >
+                            Nenhum lembrete encontrado.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredReminders.map((reminder) => {
+                          const invoiceUrl = getReminderInvoiceUrl(reminder);
+
+                          return (
+                            <tr
+                              key={reminder.id}
+                              className="hover:bg-accent/50"
+                            >
+                              <td className="px-5 py-4">
+                                <div className="font-medium">
+                                  {reminder.owner_name ??
+                                    "Cliente não informado"}
+                                </div>
+
+                                <div className="text-xs text-muted-foreground">
+                                  {reminder.owner_email ?? "-"}
+                                </div>
+                              </td>
+
+                              <td className="px-5 py-4 text-muted-foreground">
+                                {reminder.recipient ?? "-"}
+                              </td>
+
+                              <td className="px-5 py-4">
+                                <span
+                                  className={`rounded-full px-3 py-1 text-xs font-medium ${reminderChannelStyles[reminder.channel]}`}
                                 >
-                                  {isCurrentActionLoading ? (
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                  ) : (
-                                    <CheckCircle size={16} />
+                                  {reminderChannelLabels[reminder.channel]}
+                                </span>
+                              </td>
+
+                              <td className="px-5 py-4 text-muted-foreground">
+                                {reminderTypeLabels[reminder.reminder_type]}
+                              </td>
+
+                              <td className="px-5 py-4">
+                                <span
+                                  className={`rounded-full px-3 py-1 text-xs font-medium ${reminderStatusStyles[reminder.status]}`}
+                                >
+                                  {reminderStatusLabels[reminder.status]}
+                                </span>
+                              </td>
+
+                              <td className="px-5 py-4 text-muted-foreground">
+                                {typeof reminder.amount === "number"
+                                  ? formatCurrency(reminder.amount)
+                                  : "-"}
+                              </td>
+
+                              <td className="px-5 py-4 text-muted-foreground">
+                                {reminder.due_date
+                                  ? formatDate(reminder.due_date)
+                                  : "-"}
+                              </td>
+
+                              <td className="px-5 py-4 text-muted-foreground">
+                                {formatDateTime(reminder.sent_at)}
+                              </td>
+
+                              <td className="max-w-56 truncate px-5 py-4 text-muted-foreground">
+                                {reminder.error_message ?? "-"}
+                              </td>
+
+                              <td className="px-5 py-4">
+                                <div className="flex justify-end gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleViewReminder(reminder)}
+                                    className="rounded-lg border border-border p-2 hover:bg-accent"
+                                    title="Ver detalhes"
+                                  >
+                                    <Eye size={16} />
+                                  </button>
+
+                                  {invoiceUrl && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleOpenReminderInvoice(reminder)
+                                      }
+                                      className="rounded-lg border border-border p-2 text-blue-700 hover:bg-blue-50"
+                                      title="Abrir fatura"
+                                    >
+                                      <ExternalLink size={16} />
+                                    </button>
                                   )}
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() => handleCancelPayment(payment)}
-                                  disabled={
-                                    isPaid ||
-                                    isCanceled ||
-                                    isAnyPaymentActionLoading
-                                  }
-                                  className="rounded-lg border border-border p-2 text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
-                                  title="Cancelar fatura"
-                                >
-                                  <XCircle size={16} />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
 
             <div className="rounded-xl border border-border bg-card p-6">
@@ -1156,6 +1592,35 @@ export default function MasterFinanceiroPage() {
                     {metrics.activeSubscriptions}
                   </p>
                 </div>
+
+                <div className="rounded-lg border border-border p-4">
+                  <p className="text-sm text-muted-foreground">
+                    Lembretes enviados
+                  </p>
+
+                  <p className="mt-1 text-2xl font-bold">
+                    {reminderMetrics.sent}
+                  </p>
+
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {reminderMetrics.total} registro(s) no histórico
+                  </p>
+                </div>
+
+                <div className="rounded-lg border border-border p-4">
+                  <p className="text-sm text-muted-foreground">
+                    Falhas em lembretes
+                  </p>
+
+                  <p className="mt-1 text-2xl font-bold text-red-600">
+                    {reminderMetrics.failed}
+                  </p>
+
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    E-mail: {reminderMetrics.email} · WhatsApp:{" "}
+                    {reminderMetrics.whatsapp}
+                  </p>
+                </div>
               </div>
             </div>
           </div>
@@ -1170,7 +1635,7 @@ export default function MasterFinanceiroPage() {
                 <h2 className="text-xl font-semibold">Nova fatura</h2>
 
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Crie uma cobrança manual para um cliente/dono.
+                  Crie uma cobrança no Asaas para um cliente/dono.
                 </p>
               </div>
 
@@ -1239,25 +1704,10 @@ export default function MasterFinanceiroPage() {
                 />
               </div>
 
-              <div>
-                <label className="text-sm font-medium">Status inicial</label>
-
-                <select
-                  value={newPaymentStatus}
-                  onChange={(event) =>
-                    setNewPaymentStatus(event.target.value as NewPaymentStatus)
-                  }
-                  disabled={createLoading}
-                  className="mt-2 h-11 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <option value="PENDING">Pendente</option>
-                  <option value="PAID">Já paga</option>
-                </select>
-
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Se marcar como “Já paga”, o sistema cria a fatura e registra o
-                  pagamento manualmente.
-                </p>
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-700">
+                A fatura será criada como pendente no Asaas. Quando o cliente
+                pagar, o webhook do Asaas confirmará o pagamento
+                automaticamente.
               </div>
             </div>
 
@@ -1278,7 +1728,7 @@ export default function MasterFinanceiroPage() {
                 className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {createLoading && <Loader2 className="h-4 w-4 animate-spin" />}
-                Criar fatura
+                Criar cobrança Asaas
               </button>
             </div>
           </div>
