@@ -115,6 +115,15 @@ function formatCurrency(value: number) {
   }).format(value);
 }
 
+function formatCurrencyInput(value: number | string | null | undefined) {
+  const numberValue = Number(value ?? 0);
+
+  return numberValue.toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
 function formatDate(date: string) {
   if (!date) return "-";
 
@@ -324,7 +333,7 @@ export default function MasterFinanceiroPage() {
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [createLoading, setCreateLoading] = useState(false);
   const [selectedSubscriptionId, setSelectedSubscriptionId] = useState("");
-  const [newPaymentAmount, setNewPaymentAmount] = useState("59,90");
+  const [newPaymentAmount, setNewPaymentAmount] = useState("0,00");
   const [newPaymentDueDate, setNewPaymentDueDate] = useState(
     getDateInputValue(30),
   );
@@ -334,6 +343,17 @@ export default function MasterFinanceiroPage() {
       (subscription) => subscription.status !== "CANCELED",
     );
   }, [subscriptions]);
+
+  const selectedCreateSubscription = useMemo(() => {
+    const effectiveSubscriptionId =
+      selectedSubscriptionId || availableSubscriptions[0]?.id || "";
+
+    return (
+      availableSubscriptions.find(
+        (subscription) => subscription.id === effectiveSubscriptionId,
+      ) ?? null
+    );
+  }, [availableSubscriptions, selectedSubscriptionId]);
 
   const availableMonths = useMemo(() => {
     const monthMap = new Map<string, string>();
@@ -584,15 +604,23 @@ export default function MasterFinanceiroPage() {
   }
 
   function openCreateModal() {
-    const firstSubscriptionId = availableSubscriptions[0]?.id ?? "";
+    const firstSubscription = availableSubscriptions[0] ?? null;
 
-    setSelectedSubscriptionId(
-      (currentSubscriptionId) => currentSubscriptionId || firstSubscriptionId,
-    );
-
-    setNewPaymentAmount("59,90");
+    setSelectedSubscriptionId(firstSubscription?.id ?? "");
+    setNewPaymentAmount(formatCurrencyInput(firstSubscription?.monthly_price));
     setNewPaymentDueDate(getDateInputValue(30));
     setCreateModalOpen(true);
+  }
+
+  function handleSelectedSubscriptionChange(subscriptionId: string) {
+    const subscription =
+      availableSubscriptions.find(
+        (availableSubscription) =>
+          availableSubscription.id === subscriptionId,
+      ) ?? null;
+
+    setSelectedSubscriptionId(subscriptionId);
+    setNewPaymentAmount(formatCurrencyInput(subscription?.monthly_price));
   }
 
   function closeCreateModal() {
@@ -969,51 +997,175 @@ export default function MasterFinanceiroPage() {
             </div>
           )}
 
-          <div className="mb-5 flex flex-col gap-3 rounded-xl border border-border bg-card p-4 xl:flex-row xl:items-center xl:justify-between">
-            <div>
-              <p className="text-sm font-medium">Período do financeiro</p>
+          <div className="mb-5 rounded-xl border border-border bg-card p-4">
+            <div className="flex flex-col gap-4 2xl:flex-row 2xl:items-end 2xl:justify-between">
+              <div>
+                <p className="text-sm font-medium">Filtros gerais</p>
 
-              <p className="text-xs text-muted-foreground">
-                Os cards e a tabela de cobranças mudam conforme o período
-                escolhido.
-              </p>
-            </div>
+                <p className="text-xs text-muted-foreground">
+                  Escolha o período e filtre as cobranças ou lembretes no mesmo
+                  bloco.
+                </p>
+              </div>
 
-            <div className="flex flex-col gap-3 md:flex-row md:items-center">
-              <select
-                value={metricsPeriod}
-                onChange={(event) =>
-                  handleMetricsPeriodChange(event.target.value as MetricsPeriod)
-                }
-                className="h-10 rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-primary"
-              >
-                <option value="CURRENT_MONTH">Este mês</option>
-                <option value="ALL">Todos os meses</option>
-                <option value="CUSTOM_MONTH">Mês específico</option>
-              </select>
+              <div className="flex flex-wrap items-end gap-3">
+                <div>
+                  <label className="mb-1 block text-xs text-muted-foreground">
+                    Período
+                  </label>
 
-              {metricsPeriod === "CUSTOM_MONTH" && (
-                <select
-                  value={selectedMonth}
-                  onChange={(event) => {
-                    setSelectedMonth(event.target.value);
-                    setSearchTerm("");
-                    setStatusFilter("ALL");
-                  }}
-                  disabled={availableMonths.length === 0}
-                  className="h-10 rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {availableMonths.length === 0 ? (
-                    <option value="">Nenhum mês disponível</option>
-                  ) : (
-                    availableMonths.map((month) => (
-                      <option key={month.value} value={month.value}>
-                        {month.label}
-                      </option>
-                    ))
-                  )}
-                </select>
-              )}
+                  <select
+                    value={metricsPeriod}
+                    onChange={(event) =>
+                      handleMetricsPeriodChange(
+                        event.target.value as MetricsPeriod,
+                      )
+                    }
+                    className="h-10 rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-primary"
+                  >
+                    <option value="CURRENT_MONTH">Este mês</option>
+                    <option value="ALL">Todos os meses</option>
+                    <option value="CUSTOM_MONTH">Mês específico</option>
+                  </select>
+                </div>
+
+                {metricsPeriod === "CUSTOM_MONTH" && (
+                  <div>
+                    <label className="mb-1 block text-xs text-muted-foreground">
+                      Mês
+                    </label>
+
+                    <select
+                      value={selectedMonth}
+                      onChange={(event) => {
+                        setSelectedMonth(event.target.value);
+                        setSearchTerm("");
+                        setStatusFilter("ALL");
+                      }}
+                      disabled={availableMonths.length === 0}
+                      className="h-10 rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {availableMonths.length === 0 ? (
+                        <option value="">Nenhum mês disponível</option>
+                      ) : (
+                        availableMonths.map((month) => (
+                          <option key={month.value} value={month.value}>
+                            {month.label}
+                          </option>
+                        ))
+                      )}
+                    </select>
+                  </div>
+                )}
+
+                {activeTab === "PAYMENTS" ? (
+                  <>
+                    <div>
+                      <label className="mb-1 block text-xs text-muted-foreground">
+                        Buscar cobrança
+                      </label>
+
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+
+                        <input
+                          value={searchTerm}
+                          onChange={(event) => setSearchTerm(event.target.value)}
+                          placeholder="Cliente, e-mail, plano..."
+                          className="h-10 w-72 rounded-lg border border-border bg-background pl-10 pr-4 text-sm outline-none focus:border-primary"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-xs text-muted-foreground">
+                        Status
+                      </label>
+
+                      <select
+                        value={statusFilter}
+                        onChange={(event) =>
+                          setStatusFilter(
+                            event.target.value as PaymentStatusFilter,
+                          )
+                        }
+                        className="h-10 rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-primary"
+                      >
+                        <option value="ALL">Todos os status</option>
+                        <option value="PAID">Pago</option>
+                        <option value="PENDING">Pendente</option>
+                        <option value="OVERDUE">Atrasado</option>
+                        <option value="CANCELED">Cancelado</option>
+                      </select>
+                    </div>
+
+                    {hasActiveFilters && (
+                      <button
+                        type="button"
+                        onClick={clearFilters}
+                        className="flex h-10 items-center justify-center gap-2 rounded-lg border border-border px-3 text-sm font-medium hover:bg-accent"
+                      >
+                        <X className="h-4 w-4" />
+                        Limpar
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <label className="mb-1 block text-xs text-muted-foreground">
+                        Buscar lembrete
+                      </label>
+
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+
+                        <input
+                          value={reminderSearchTerm}
+                          onChange={(event) =>
+                            setReminderSearchTerm(event.target.value)
+                          }
+                          placeholder="Cliente, e-mail, assunto..."
+                          className="h-10 w-72 rounded-lg border border-border bg-background pl-10 pr-4 text-sm outline-none focus:border-primary"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-xs text-muted-foreground">
+                        Status
+                      </label>
+
+                      <select
+                        value={reminderStatusFilter}
+                        onChange={(event) =>
+                          setReminderStatusFilter(
+                            event.target.value as ReminderStatusFilter,
+                          )
+                        }
+                        className="h-10 rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-primary"
+                      >
+                        <option value="ALL">Todos os status</option>
+                        <option value="PENDING">Pendente</option>
+                        <option value="SENT">Enviado</option>
+                        <option value="FAILED">Falhou</option>
+                        <option value="SKIPPED">Ignorado</option>
+                      </select>
+                    </div>
+
+                    {hasActiveReminderFilters && (
+                      <button
+                        type="button"
+                        onClick={clearReminderFilters}
+                        className="flex h-10 items-center justify-center gap-2 rounded-lg border border-border px-3 text-sm font-medium hover:bg-accent"
+                      >
+                        <X className="h-4 w-4" />
+                        Limpar
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
           </div>
 
@@ -1050,96 +1202,44 @@ export default function MasterFinanceiroPage() {
           <div className="mt-6 grid gap-6 xl:grid-cols-[1fr_320px]">
             <div className="rounded-xl border border-border bg-card">
               <div className="border-b border-border p-6">
-                <div className="mb-5 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab("PAYMENTS")}
-                    className={`rounded-lg px-4 py-2 text-sm font-medium transition ${
-                      activeTab === "PAYMENTS"
-                        ? "bg-primary text-primary-foreground"
-                        : "border border-border hover:bg-accent"
-                    }`}
-                  >
-                    Cobranças
-                  </button>
+                <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                  <div>
+                    <div className="mb-4 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab("PAYMENTS")}
+                        className={`rounded-lg px-4 py-2 text-sm font-medium transition ${
+                          activeTab === "PAYMENTS"
+                            ? "bg-primary text-primary-foreground"
+                            : "border border-border hover:bg-accent"
+                        }`}
+                      >
+                        Cobranças
+                      </button>
 
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab("REMINDERS")}
-                    className={`rounded-lg px-4 py-2 text-sm font-medium transition ${
-                      activeTab === "REMINDERS"
-                        ? "bg-primary text-primary-foreground"
-                        : "border border-border hover:bg-accent"
-                    }`}
-                  >
-                    Lembretes
-                  </button>
-                </div>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab("REMINDERS")}
+                        className={`rounded-lg px-4 py-2 text-sm font-medium transition ${
+                          activeTab === "REMINDERS"
+                            ? "bg-primary text-primary-foreground"
+                            : "border border-border hover:bg-accent"
+                        }`}
+                      >
+                        Lembretes
+                      </button>
+                    </div>
 
-                {activeTab === "PAYMENTS" ? (
-                  <>
-                    <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
-                      <div>
+                    {activeTab === "PAYMENTS" ? (
+                      <>
                         <h2 className="text-lg font-semibold">Cobranças</h2>
 
                         <p className="text-sm text-muted-foreground">
                           Faturas do período: {selectedPeriodLabel}.
                         </p>
-                      </div>
-
-                      <div className="flex flex-col gap-3 md:flex-row md:items-center">
-                        <div className="relative">
-                          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-
-                          <input
-                            value={searchTerm}
-                            onChange={(event) =>
-                              setSearchTerm(event.target.value)
-                            }
-                            placeholder="Pesquisar cliente, e-mail, plano, gateway..."
-                            className="h-10 w-full rounded-lg border border-border bg-background pl-10 pr-4 text-sm outline-none focus:border-primary md:w-80"
-                          />
-                        </div>
-
-                        <select
-                          value={statusFilter}
-                          onChange={(event) =>
-                            setStatusFilter(
-                              event.target.value as PaymentStatusFilter,
-                            )
-                          }
-                          className="h-10 rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-primary"
-                        >
-                          <option value="ALL">Todos os status</option>
-                          <option value="PAID">Pago</option>
-                          <option value="PENDING">Pendente</option>
-                          <option value="OVERDUE">Atrasado</option>
-                          <option value="CANCELED">Cancelado</option>
-                        </select>
-
-                        {hasActiveFilters && (
-                          <button
-                            type="button"
-                            onClick={clearFilters}
-                            className="flex h-10 items-center justify-center gap-2 rounded-lg border border-border px-3 text-sm font-medium hover:bg-accent"
-                          >
-                            <X className="h-4 w-4" />
-                            Limpar
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="mt-4 text-xs text-muted-foreground">
-                      Mostrando {filteredPayments.length} de{" "}
-                      {periodPayments.length} faturas do período. Total geral no
-                      banco: {payments.length}.
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
-                      <div>
+                      </>
+                    ) : (
+                      <>
                         <h2 className="text-lg font-semibold">
                           Histórico de lembretes
                         </h2>
@@ -1147,57 +1247,25 @@ export default function MasterFinanceiroPage() {
                         <p className="text-sm text-muted-foreground">
                           Lembretes enviados por e-mail ou WhatsApp.
                         </p>
-                      </div>
+                      </>
+                    )}
+                  </div>
 
-                      <div className="flex flex-col gap-3 md:flex-row md:items-center">
-                        <div className="relative">
-                          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-
-                          <input
-                            value={reminderSearchTerm}
-                            onChange={(event) =>
-                              setReminderSearchTerm(event.target.value)
-                            }
-                            placeholder="Pesquisar cliente, e-mail, assunto..."
-                            className="h-10 w-full rounded-lg border border-border bg-background pl-10 pr-4 text-sm outline-none focus:border-primary md:w-80"
-                          />
-                        </div>
-
-                        <select
-                          value={reminderStatusFilter}
-                          onChange={(event) =>
-                            setReminderStatusFilter(
-                              event.target.value as ReminderStatusFilter,
-                            )
-                          }
-                          className="h-10 rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-primary"
-                        >
-                          <option value="ALL">Todos os status</option>
-                          <option value="PENDING">Pendente</option>
-                          <option value="SENT">Enviado</option>
-                          <option value="FAILED">Falhou</option>
-                          <option value="SKIPPED">Ignorado</option>
-                        </select>
-
-                        {hasActiveReminderFilters && (
-                          <button
-                            type="button"
-                            onClick={clearReminderFilters}
-                            className="flex h-10 items-center justify-center gap-2 rounded-lg border border-border px-3 text-sm font-medium hover:bg-accent"
-                          >
-                            <X className="h-4 w-4" />
-                            Limpar
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="mt-4 text-xs text-muted-foreground">
-                      Mostrando {filteredReminders.length} de{" "}
-                      {reminders.length} lembrete(s).
-                    </div>
-                  </>
-                )}
+                  <div className="text-sm text-muted-foreground">
+                    {activeTab === "PAYMENTS" ? (
+                      <>
+                        Mostrando {filteredPayments.length} de{" "}
+                        {periodPayments.length} faturas do período. Total geral:{" "}
+                        {payments.length}.
+                      </>
+                    ) : (
+                      <>
+                        Mostrando {filteredReminders.length} de{" "}
+                        {reminders.length} lembrete(s).
+                      </>
+                    )}
+                  </div>
+                </div>
               </div>
 
               {activeTab === "PAYMENTS" ? (
@@ -1660,7 +1728,7 @@ export default function MasterFinanceiroPage() {
                     ""
                   }
                   onChange={(event) =>
-                    setSelectedSubscriptionId(event.target.value)
+                    handleSelectedSubscriptionChange(event.target.value)
                   }
                   disabled={createLoading}
                   className="mt-2 h-11 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-60"
@@ -1673,11 +1741,20 @@ export default function MasterFinanceiroPage() {
                         {subscription.owner_name ?? "Cliente"} -{" "}
                         {subscription.owner_email ?? "-"} -{" "}
                         {subscription.total_restaurants ?? 0} restaurante(s) -{" "}
-                        {subscription.plan_name}
+                        {subscription.plan_name} -{" "}
+                        {formatCurrency(subscription.monthly_price)}/mês
                       </option>
                     ))
                   )}
                 </select>
+
+                {selectedCreateSubscription && (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Valor padrão desta assinatura:{" "}
+                    {formatCurrency(selectedCreateSubscription.monthly_price)}
+                    /mês.
+                  </p>
+                )}
               </div>
 
               <div>
@@ -1690,6 +1767,11 @@ export default function MasterFinanceiroPage() {
                   placeholder="59,90"
                   className="mt-2 h-11 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-60"
                 />
+
+                <p className="mt-2 text-xs text-muted-foreground">
+                  O valor vem automaticamente da assinatura selecionada, mas pode
+                  ser ajustado manualmente antes de gerar a cobrança.
+                </p>
               </div>
 
               <div>

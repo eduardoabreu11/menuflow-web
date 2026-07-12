@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import {
+  Calendar,
+  CreditCard,
   Eye,
   Lock,
   Mail,
@@ -43,9 +45,29 @@ import {
   type UserRole,
 } from "@/services/userService";
 
+import { getPlans, type Plan } from "@/services/planService";
+
+import {
+  cancelSubscription,
+  createSubscription,
+  getSubscriptions,
+  updateSubscription,
+  type Subscription,
+} from "@/services/financeService";
+
 type EditableUserRole = "MASTER" | "RESTAURANT_OWNER";
 type RoleFilter = "ALL" | EditableUserRole;
 type StatusFilter = "ALL" | "ACTIVE" | "INACTIVE";
+
+type SubscriptionFilter =
+  | "ALL"
+  | "ACTIVE"
+  | "PENDING"
+  | "OVERDUE"
+  | "CANCELED"
+  | "NONE";
+
+type ManageSubscriptionStatus = "ACTIVE" | "PENDING" | "OVERDUE";
 
 function getRoleLabel(role: UserRole) {
   if (role === "MASTER") return "Master";
@@ -61,15 +83,95 @@ function getRoleStyle(role: UserRole) {
   return "bg-zinc-100 text-zinc-700";
 }
 
+function getSubscriptionStatusLabel(status?: string) {
+  if (status === "ACTIVE") return "Ativa";
+  if (status === "PENDING") return "Pendente";
+  if (status === "OVERDUE") return "Em atraso";
+  if (status === "CANCELED") return "Cancelada";
+
+  return "Sem assinatura";
+}
+
+function getSubscriptionStatusStyle(status?: string) {
+  if (status === "ACTIVE") return "bg-green-100 text-green-700";
+  if (status === "PENDING") return "bg-yellow-100 text-yellow-700";
+  if (status === "OVERDUE") return "bg-red-100 text-red-700";
+  if (status === "CANCELED") return "bg-zinc-100 text-zinc-700";
+
+  return "bg-zinc-100 text-zinc-700";
+}
+
+function formatDate(value?: string | null) {
+  if (!value) return "-";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "-";
+  }
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+  }).format(date);
+}
+
+function formatCurrency(value?: string | number | null) {
+  const numberValue = Number(value ?? 0);
+
+  return numberValue.toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  });
+}
+
+function normalizeMoney(value: string) {
+  const normalizedValue = value
+    .replace("R$", "")
+    .replace(/\./g, "")
+    .replace(",", ".")
+    .trim();
+
+  return Number(normalizedValue);
+}
+
+function getSubscriptionDateTime(subscription: Subscription) {
+  const value = subscription.created_at;
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return 0;
+  }
+
+  return date.getTime();
+}
+
+function getDefaultNextBillingDate() {
+  const date = new Date();
+
+  date.setDate(date.getDate() + 30);
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
 export default function MasterUsersPage() {
   const router = useRouter();
 
   const [users, setUsers] = useState<User[]>([]);
+  const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
+  const [plans, setPlans] = useState<Plan[]>([]);
+
   const [loading, setLoading] = useState(true);
 
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("ALL");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
+  const [subscriptionFilter, setSubscriptionFilter] =
+    useState<SubscriptionFilter>("ALL");
 
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -87,6 +189,17 @@ export default function MasterUsersPage() {
   const [createRole, setCreateRole] =
     useState<EditableUserRole>("RESTAURANT_OWNER");
 
+  const [createWithSubscription, setCreateWithSubscription] = useState(true);
+  const [createSubscriptionPlanId, setCreateSubscriptionPlanId] = useState("");
+  const [createSubscriptionStatus, setCreateSubscriptionStatus] =
+    useState<ManageSubscriptionStatus>("ACTIVE");
+  const [createSubscriptionMonthlyPrice, setCreateSubscriptionMonthlyPrice] =
+    useState("");
+  const [
+    createSubscriptionNextBillingDate,
+    setCreateSubscriptionNextBillingDate,
+  ] = useState(getDefaultNextBillingDate());
+
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editLoading, setEditLoading] = useState(false);
 
@@ -95,15 +208,50 @@ export default function MasterUsersPage() {
   const [editRole, setEditRole] =
     useState<EditableUserRole>("RESTAURANT_OWNER");
 
+  const [editSubscription, setEditSubscription] =
+    useState<Subscription | null>(null);
+  const [editWithSubscription, setEditWithSubscription] = useState(false);
+  const [editSubscriptionPlanId, setEditSubscriptionPlanId] = useState("");
+  const [editSubscriptionStatus, setEditSubscriptionStatus] =
+    useState<ManageSubscriptionStatus>("ACTIVE");
+  const [editSubscriptionMonthlyPrice, setEditSubscriptionMonthlyPrice] =
+    useState("");
+  const [editSubscriptionNextBillingDate, setEditSubscriptionNextBillingDate] =
+    useState(getDefaultNextBillingDate());
+
   const [actionLoading, setActionLoading] = useState(false);
+
+  const activePlans = useMemo(() => {
+    return plans.filter((plan) => plan.is_active);
+  }, [plans]);
+
+  function getFirstAvailablePlan() {
+    return activePlans[0] ?? plans[0] ?? null;
+  }
+
+  function getPlanById(planId: string) {
+    return plans.find((plan) => plan.id === planId) ?? null;
+  }
+
+  function getPlanMonthlyPrice(plan: Plan | null) {
+    if (!plan) return "";
+
+    return String(plan.monthly_price ?? "");
+  }
 
   async function loadUsers() {
     try {
       setLoading(true);
 
-      const data = await getUsers();
+      const [usersData, subscriptionsData, plansData] = await Promise.all([
+        getUsers(),
+        getSubscriptions(),
+        getPlans(),
+      ]);
 
-      setUsers(data);
+      setUsers(usersData);
+      setSubscriptions(subscriptionsData);
+      setPlans(plansData);
     } catch (error) {
       console.error(error);
 
@@ -124,6 +272,34 @@ export default function MasterUsersPage() {
     });
   }, []);
 
+  const subscriptionByOwnerId = useMemo(() => {
+    const map = new Map<string, Subscription>();
+
+    const orderedSubscriptions = [...subscriptions].sort(
+      (a, b) => getSubscriptionDateTime(b) - getSubscriptionDateTime(a),
+    );
+
+    for (const subscription of orderedSubscriptions) {
+      const current = map.get(subscription.owner_user_id);
+
+      if (!current) {
+        map.set(subscription.owner_user_id, subscription);
+        continue;
+      }
+
+      if (current.status === "CANCELED" && subscription.status !== "CANCELED") {
+        map.set(subscription.owner_user_id, subscription);
+        continue;
+      }
+
+      if (current.status !== "ACTIVE" && subscription.status === "ACTIVE") {
+        map.set(subscription.owner_user_id, subscription);
+      }
+    }
+
+    return map;
+  }, [subscriptions]);
+
   const filteredUsers = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
 
@@ -132,9 +308,14 @@ export default function MasterUsersPage() {
         return false;
       }
 
+      const subscription = subscriptionByOwnerId.get(user.id);
+
       const matchesSearch =
         user.name.toLowerCase().includes(normalizedSearch) ||
-        user.email.toLowerCase().includes(normalizedSearch);
+        user.email.toLowerCase().includes(normalizedSearch) ||
+        (subscription?.plan_name ?? "")
+          .toLowerCase()
+          .includes(normalizedSearch);
 
       const matchesRole = roleFilter === "ALL" || user.role === roleFilter;
 
@@ -143,29 +324,41 @@ export default function MasterUsersPage() {
         (statusFilter === "ACTIVE" && user.is_active) ||
         (statusFilter === "INACTIVE" && !user.is_active);
 
-      return matchesSearch && matchesRole && matchesStatus;
+      const matchesSubscription =
+        subscriptionFilter === "ALL" ||
+        (subscriptionFilter === "NONE" &&
+          user.role === "RESTAURANT_OWNER" &&
+          (!subscription || subscription.status === "CANCELED")) ||
+        subscription?.status === subscriptionFilter;
+
+      return (
+        matchesSearch &&
+        matchesRole &&
+        matchesStatus &&
+        matchesSubscription
+      );
     });
-  }, [users, search, roleFilter, statusFilter]);
-
-  function formatDate(value: string) {
-    const date = new Date(value);
-
-    if (Number.isNaN(date.getTime())) {
-      return "-";
-    }
-
-    return new Intl.DateTimeFormat("pt-BR", {
-      timeZone: "America/Sao_Paulo",
-    }).format(date);
-  }
+  }, [
+    users,
+    search,
+    roleFilter,
+    statusFilter,
+    subscriptionFilter,
+    subscriptionByOwnerId,
+  ]);
 
   function handleViewUser(user: User) {
     router.push(`/master/usuarios/${user.id}`);
   }
 
-  function handleOpenCreateDialog() {
-    resetCreateForm();
-    setCreateDialogOpen(true);
+  function resetCreateSubscriptionFields() {
+    const firstPlan = getFirstAvailablePlan();
+
+    setCreateWithSubscription(true);
+    setCreateSubscriptionPlanId(firstPlan?.id ?? "");
+    setCreateSubscriptionStatus("ACTIVE");
+    setCreateSubscriptionMonthlyPrice(getPlanMonthlyPrice(firstPlan));
+    setCreateSubscriptionNextBillingDate(getDefaultNextBillingDate());
   }
 
   function resetCreateForm() {
@@ -173,6 +366,73 @@ export default function MasterUsersPage() {
     setCreateEmail("");
     setCreatePassword("");
     setCreateRole("RESTAURANT_OWNER");
+    resetCreateSubscriptionFields();
+  }
+
+  function handleOpenCreateDialog() {
+    resetCreateForm();
+    setCreateDialogOpen(true);
+  }
+
+  function handleCreateRoleChange(role: EditableUserRole) {
+    setCreateRole(role);
+
+    if (role === "MASTER") {
+      setCreateWithSubscription(false);
+      return;
+    }
+
+    setCreateWithSubscription(true);
+
+    if (!createSubscriptionPlanId) {
+      const firstPlan = getFirstAvailablePlan();
+
+      setCreateSubscriptionPlanId(firstPlan?.id ?? "");
+      setCreateSubscriptionMonthlyPrice(getPlanMonthlyPrice(firstPlan));
+    }
+  }
+
+  function handleCreateSubscriptionPlanChange(planId: string) {
+    const plan = getPlanById(planId);
+
+    setCreateSubscriptionPlanId(planId);
+    setCreateSubscriptionMonthlyPrice(getPlanMonthlyPrice(plan));
+  }
+
+  function resetEditSubscriptionFields(user: User) {
+    const subscription = subscriptionByOwnerId.get(user.id) ?? null;
+    const editableSubscription =
+      subscription && subscription.status !== "CANCELED" ? subscription : null;
+
+    const matchedPlan = editableSubscription
+      ? plans.find((plan) => plan.name === editableSubscription.plan_name) ??
+        null
+      : null;
+
+    const selectedPlan = matchedPlan ?? getFirstAvailablePlan();
+
+    setEditSubscription(editableSubscription);
+    setEditWithSubscription(Boolean(editableSubscription));
+    setEditSubscriptionPlanId(selectedPlan?.id ?? "");
+    setEditSubscriptionMonthlyPrice(
+      editableSubscription
+        ? String(editableSubscription.monthly_price ?? "")
+        : getPlanMonthlyPrice(selectedPlan),
+    );
+    setEditSubscriptionNextBillingDate(
+      editableSubscription?.next_billing_date ?? getDefaultNextBillingDate(),
+    );
+
+    if (
+      editableSubscription?.status === "ACTIVE" ||
+      editableSubscription?.status === "PENDING" ||
+      editableSubscription?.status === "OVERDUE"
+    ) {
+      setEditSubscriptionStatus(editableSubscription.status);
+      return;
+    }
+
+    setEditSubscriptionStatus("ACTIVE");
   }
 
   function handleOpenEditDialog(user: User) {
@@ -180,7 +440,31 @@ export default function MasterUsersPage() {
     setEditName(user.name);
     setEditEmail(user.email);
     setEditRole(user.role === "MASTER" ? "MASTER" : "RESTAURANT_OWNER");
+    resetEditSubscriptionFields(user);
     setEditDialogOpen(true);
+  }
+
+  function handleEditRoleChange(role: EditableUserRole) {
+    setEditRole(role);
+
+    if (role === "MASTER") {
+      setEditWithSubscription(false);
+      return;
+    }
+
+    if (!editSubscriptionPlanId) {
+      const firstPlan = getFirstAvailablePlan();
+
+      setEditSubscriptionPlanId(firstPlan?.id ?? "");
+      setEditSubscriptionMonthlyPrice(getPlanMonthlyPrice(firstPlan));
+    }
+  }
+
+  function handleEditSubscriptionPlanChange(planId: string) {
+    const plan = getPlanById(planId);
+
+    setEditSubscriptionPlanId(planId);
+    setEditSubscriptionMonthlyPrice(getPlanMonthlyPrice(plan));
   }
 
   function handleOpenActivateDialog(user: User) {
@@ -214,15 +498,46 @@ export default function MasterUsersPage() {
       return;
     }
 
+    const shouldCreateSubscription =
+      createRole === "RESTAURANT_OWNER" && createWithSubscription;
+
+    const selectedPlan = getPlanById(createSubscriptionPlanId);
+    const monthlyPrice = normalizeMoney(createSubscriptionMonthlyPrice);
+
+    if (shouldCreateSubscription && !selectedPlan) {
+      alert("Selecione o plano do dono");
+      return;
+    }
+
+    if (shouldCreateSubscription && (!monthlyPrice || monthlyPrice <= 0)) {
+      alert("Informe um valor mensal válido para a assinatura");
+      return;
+    }
+
+    if (shouldCreateSubscription && !createSubscriptionNextBillingDate) {
+      alert("Informe o próximo vencimento da assinatura");
+      return;
+    }
+
     try {
       setCreateLoading(true);
 
-      await createUser({
+      const createdUser = await createUser({
         name: createName.trim(),
         email: createEmail.trim(),
         password: createPassword,
         role: createRole,
       });
+
+      if (shouldCreateSubscription && selectedPlan) {
+        await createSubscription({
+          owner_user_id: createdUser.id,
+          status: createSubscriptionStatus,
+          plan_name: selectedPlan.name,
+          monthly_price: monthlyPrice,
+          next_billing_date: createSubscriptionNextBillingDate,
+        });
+      }
 
       await loadUsers();
 
@@ -255,6 +570,40 @@ export default function MasterUsersPage() {
       return;
     }
 
+    const shouldSaveSubscription =
+      editRole === "RESTAURANT_OWNER" && editWithSubscription;
+
+    const shouldCancelSubscription =
+      Boolean(editSubscription) &&
+      editSubscription?.status !== "CANCELED" &&
+      (editRole === "MASTER" || !editWithSubscription);
+
+    const selectedPlan = getPlanById(editSubscriptionPlanId);
+    const monthlyPrice = normalizeMoney(editSubscriptionMonthlyPrice);
+
+    if (shouldSaveSubscription && !selectedPlan) {
+      alert("Selecione o plano do dono");
+      return;
+    }
+
+    if (shouldSaveSubscription && (!monthlyPrice || monthlyPrice <= 0)) {
+      alert("Informe um valor mensal válido para a assinatura");
+      return;
+    }
+
+    if (shouldSaveSubscription && !editSubscriptionNextBillingDate) {
+      alert("Informe o próximo vencimento da assinatura");
+      return;
+    }
+
+    if (shouldCancelSubscription) {
+      const confirmed = confirm(
+        "Você desmarcou/removeu a assinatura deste dono. Ao salvar, a assinatura atual será cancelada. Deseja continuar?",
+      );
+
+      if (!confirmed) return;
+    }
+
     try {
       setEditLoading(true);
 
@@ -264,10 +613,34 @@ export default function MasterUsersPage() {
         role: editRole,
       });
 
+      if (shouldCancelSubscription && editSubscription) {
+        await cancelSubscription(editSubscription.id);
+      }
+
+      if (shouldSaveSubscription && selectedPlan) {
+        if (editSubscription && editSubscription.status !== "CANCELED") {
+          await updateSubscription(editSubscription.id, {
+            status: editSubscriptionStatus,
+            plan_name: selectedPlan.name,
+            monthly_price: monthlyPrice,
+            next_billing_date: editSubscriptionNextBillingDate,
+          });
+        } else {
+          await createSubscription({
+            owner_user_id: editingUser.id,
+            status: editSubscriptionStatus,
+            plan_name: selectedPlan.name,
+            monthly_price: monthlyPrice,
+            next_billing_date: editSubscriptionNextBillingDate,
+          });
+        }
+      }
+
       await loadUsers();
 
       setEditDialogOpen(false);
       setEditingUser(null);
+      setEditSubscription(null);
     } catch (error) {
       console.error(error);
 
@@ -370,7 +743,7 @@ export default function MasterUsersPage() {
               <h1 className="text-3xl font-bold text-foreground">Usuários</h1>
 
               <p className="mt-1 text-muted-foreground">
-                Gerencie os usuários cadastrados na plataforma.
+                Gerencie usuários, planos e assinaturas dos donos de restaurante.
               </p>
             </div>
 
@@ -395,7 +768,7 @@ export default function MasterUsersPage() {
                 type="text"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Buscar usuário..."
+                placeholder="Buscar usuário, e-mail ou plano..."
                 className="h-10 w-full rounded-lg border border-border bg-card pl-10 pr-4 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary"
               />
             </div>
@@ -420,9 +793,26 @@ export default function MasterUsersPage() {
                 }
                 className="h-10 rounded-lg border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary"
               >
-                <option value="ALL">Todos os status</option>
-                <option value="ACTIVE">Ativos</option>
-                <option value="INACTIVE">Inativos</option>
+                <option value="ALL">Todos os usuários</option>
+                <option value="ACTIVE">Usuários ativos</option>
+                <option value="INACTIVE">Usuários inativos</option>
+              </select>
+
+              <select
+                value={subscriptionFilter}
+                onChange={(event) =>
+                  setSubscriptionFilter(
+                    event.target.value as SubscriptionFilter,
+                  )
+                }
+                className="h-10 rounded-lg border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary"
+              >
+                <option value="ALL">Todas as assinaturas</option>
+                <option value="ACTIVE">Assinatura ativa</option>
+                <option value="PENDING">Assinatura pendente</option>
+                <option value="OVERDUE">Assinatura atrasada</option>
+                <option value="CANCELED">Assinatura cancelada</option>
+                <option value="NONE">Sem assinatura</option>
               </select>
             </div>
           </div>
@@ -435,7 +825,9 @@ export default function MasterUsersPage() {
                     <th className="px-5 py-4 font-medium">Usuário</th>
                     <th className="px-5 py-4 font-medium">E-mail</th>
                     <th className="px-5 py-4 font-medium">Função</th>
-                    <th className="px-5 py-4 font-medium">Status</th>
+                    <th className="px-5 py-4 font-medium">Plano</th>
+                    <th className="px-5 py-4 font-medium">Assinatura</th>
+                    <th className="px-5 py-4 font-medium">Status usuário</th>
                     <th className="px-5 py-4 font-medium">Cadastro</th>
                     <th className="px-5 py-4 text-right font-medium">Ações</th>
                   </tr>
@@ -445,7 +837,7 @@ export default function MasterUsersPage() {
                   {loading && (
                     <tr>
                       <td
-                        colSpan={6}
+                        colSpan={8}
                         className="px-5 py-8 text-center text-muted-foreground"
                       >
                         Carregando usuários...
@@ -456,7 +848,7 @@ export default function MasterUsersPage() {
                   {!loading && filteredUsers.length === 0 && (
                     <tr>
                       <td
-                        colSpan={6}
+                        colSpan={8}
                         className="px-5 py-8 text-center text-muted-foreground"
                       >
                         Nenhum usuário encontrado.
@@ -465,108 +857,173 @@ export default function MasterUsersPage() {
                   )}
 
                   {!loading &&
-                    filteredUsers.map((user) => (
-                      <tr
-                        key={user.id}
-                        className="transition hover:bg-accent/50"
-                      >
-                        <td className="px-5 py-4">
-                          <div className="flex items-center gap-3">
-                            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
-                              <UserRound size={18} />
+                    filteredUsers.map((user) => {
+                      const subscription = subscriptionByOwnerId.get(user.id);
+                      const isOwner = user.role === "RESTAURANT_OWNER";
+
+                      return (
+                        <tr
+                          key={user.id}
+                          className="transition hover:bg-accent/50"
+                        >
+                          <td className="px-5 py-4">
+                            <div className="flex items-center gap-3">
+                              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
+                                <UserRound size={18} />
+                              </div>
+
+                              <span className="font-medium text-foreground">
+                                {user.name}
+                              </span>
                             </div>
+                          </td>
 
-                            <span className="font-medium text-foreground">
-                              {user.name}
+                          <td className="px-5 py-4 text-muted-foreground">
+                            <div className="flex items-center gap-2">
+                              <Mail size={15} />
+                              {user.email}
+                            </div>
+                          </td>
+
+                          <td className="px-5 py-4">
+                            <span
+                              className={`rounded-full px-3 py-1 text-xs font-medium ${getRoleStyle(
+                                user.role,
+                              )}`}
+                            >
+                              {getRoleLabel(user.role)}
                             </span>
-                          </div>
-                        </td>
+                          </td>
 
-                        <td className="px-5 py-4 text-muted-foreground">
-                          <div className="flex items-center gap-2">
-                            <Mail size={15} />
-                            {user.email}
-                          </div>
-                        </td>
+                          <td className="px-5 py-4">
+                            {isOwner && subscription ? (
+                              <div>
+                                <div className="flex items-center gap-2 font-medium text-foreground">
+                                  <CreditCard size={15} />
+                                  {subscription.plan_name}
+                                </div>
 
-                        <td className="px-5 py-4">
-                          <span
-                            className={`rounded-full px-3 py-1 text-xs font-medium ${getRoleStyle(
-                              user.role,
-                            )}`}
-                          >
-                            {getRoleLabel(user.role)}
-                          </span>
-                        </td>
-
-                        <td className="px-5 py-4">
-                          <span
-                            className={`rounded-full px-3 py-1 text-xs font-medium ${
-                              user.is_active
-                                ? "bg-green-100 text-green-700"
-                                : "bg-red-100 text-red-700"
-                            }`}
-                          >
-                            {user.is_active ? "Ativo" : "Inativo"}
-                          </span>
-                        </td>
-
-                        <td className="px-5 py-4 text-muted-foreground">
-                          {formatDate(user.created_at)}
-                        </td>
-
-                        <td className="px-5 py-4">
-                          <div className="flex justify-end gap-2">
-                            <button
-                              type="button"
-                              onClick={() => handleViewUser(user)}
-                              className="rounded-lg border border-border p-2 text-muted-foreground transition hover:bg-accent hover:text-foreground"
-                              title="Ver detalhes"
-                            >
-                              <Eye size={16} />
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => handleOpenEditDialog(user)}
-                              className="rounded-lg border border-border p-2 text-muted-foreground transition hover:bg-accent hover:text-foreground"
-                              title="Editar usuário"
-                            >
-                              <Pencil size={16} />
-                            </button>
-
-                            {user.is_active ? (
-                              <button
-                                type="button"
-                                onClick={() => handleOpenDisableDialog(user)}
-                                className="rounded-lg border border-border p-2 text-muted-foreground transition hover:bg-accent hover:text-foreground"
-                                title="Desativar usuário"
-                              >
-                                <Lock size={16} />
-                              </button>
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                  {formatCurrency(subscription.monthly_price)}
+                                  /mês
+                                </p>
+                              </div>
+                            ) : isOwner ? (
+                              <span className="text-sm text-muted-foreground">
+                                Sem plano
+                              </span>
                             ) : (
+                              <span className="text-sm text-muted-foreground">
+                                Não se aplica
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="px-5 py-4">
+                            {isOwner && subscription ? (
+                              <div>
+                                <span
+                                  className={`rounded-full px-3 py-1 text-xs font-medium ${getSubscriptionStatusStyle(
+                                    subscription.status,
+                                  )}`}
+                                >
+                                  {getSubscriptionStatusLabel(
+                                    subscription.status,
+                                  )}
+                                </span>
+
+                                <p className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
+                                  <Calendar size={13} />
+                                  Vence em{" "}
+                                  {formatDate(
+                                    subscription.next_billing_date,
+                                  )}
+                                </p>
+                              </div>
+                            ) : isOwner ? (
+                              <span
+                                className={`rounded-full px-3 py-1 text-xs font-medium ${getSubscriptionStatusStyle()}`}
+                              >
+                                Sem assinatura
+                              </span>
+                            ) : (
+                              <span className="text-sm text-muted-foreground">
+                                -
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="px-5 py-4">
+                            <span
+                              className={`rounded-full px-3 py-1 text-xs font-medium ${
+                                user.is_active
+                                  ? "bg-green-100 text-green-700"
+                                  : "bg-red-100 text-red-700"
+                              }`}
+                            >
+                              {user.is_active ? "Ativo" : "Inativo"}
+                            </span>
+                          </td>
+
+                          <td className="px-5 py-4 text-muted-foreground">
+                            {formatDate(user.created_at)}
+                          </td>
+
+                          <td className="px-5 py-4">
+                            <div className="flex justify-end gap-2">
                               <button
                                 type="button"
-                                onClick={() => handleOpenActivateDialog(user)}
-                                className="rounded-lg border border-border p-2 text-green-600 transition hover:bg-green-50"
-                                title="Ativar usuário"
+                                onClick={() => handleViewUser(user)}
+                                className="rounded-lg border border-border p-2 text-muted-foreground transition hover:bg-accent hover:text-foreground"
+                                title="Ver detalhes"
                               >
-                                <Unlock size={16} />
+                                <Eye size={16} />
                               </button>
-                            )}
 
-                            <button
-                              type="button"
-                              onClick={() => handleOpenDeleteDialog(user)}
-                              className="rounded-lg border border-border p-2 text-red-600 transition hover:bg-red-50"
-                              title="Excluir usuário"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditDialog(user)}
+                                className="rounded-lg border border-border p-2 text-muted-foreground transition hover:bg-accent hover:text-foreground"
+                                title="Editar usuário e assinatura"
+                              >
+                                <Pencil size={16} />
+                              </button>
+
+                              {user.is_active ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenDisableDialog(user)}
+                                  className="rounded-lg border border-border p-2 text-muted-foreground transition hover:bg-accent hover:text-foreground"
+                                  title="Desativar usuário"
+                                >
+                                  <Lock size={16} />
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleOpenActivateDialog(user)
+                                  }
+                                  className="rounded-lg border border-border p-2 text-green-600 transition hover:bg-green-50"
+                                  title="Ativar usuário"
+                                >
+                                  <Unlock size={16} />
+                                </button>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={() => handleOpenDeleteDialog(user)}
+                                className="rounded-lg border border-border p-2 text-red-600 transition hover:bg-red-50"
+                                title="Excluir usuário"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                 </tbody>
               </table>
             </div>
@@ -586,7 +1043,7 @@ export default function MasterUsersPage() {
             <DialogTitle>Novo usuário</DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-4">
+          <div className="max-h-[70vh] space-y-4 overflow-y-auto pr-1">
             <div>
               <Label>Nome</Label>
 
@@ -627,7 +1084,9 @@ export default function MasterUsersPage() {
               <select
                 value={createRole}
                 onChange={(event) =>
-                  setCreateRole(event.target.value as EditableUserRole)
+                  handleCreateRoleChange(
+                    event.target.value as EditableUserRole,
+                  )
                 }
                 className="mt-2 h-10 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-primary"
               >
@@ -635,6 +1094,115 @@ export default function MasterUsersPage() {
                 <option value="MASTER">Master</option>
               </select>
             </div>
+
+            {createRole === "RESTAURANT_OWNER" && (
+              <div className="rounded-xl border border-border bg-background p-4">
+                <div className="flex items-start gap-3">
+                  <input
+                    id="create-with-subscription"
+                    type="checkbox"
+                    checked={createWithSubscription}
+                    onChange={(event) =>
+                      setCreateWithSubscription(event.target.checked)
+                    }
+                    className="mt-1"
+                  />
+
+                  <div>
+                    <Label htmlFor="create-with-subscription">
+                      Definir plano/assinatura agora
+                    </Label>
+
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Se desmarcar, o dono será criado sem plano e poderá receber
+                      uma assinatura depois.
+                    </p>
+                  </div>
+                </div>
+
+                {createWithSubscription && (
+                  <div className="mt-4 grid gap-4 md:grid-cols-2">
+                    <div className="md:col-span-2">
+                      <Label>Plano</Label>
+
+                      <select
+                        value={createSubscriptionPlanId}
+                        onChange={(event) =>
+                          handleCreateSubscriptionPlanChange(event.target.value)
+                        }
+                        className="mt-2 h-10 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary"
+                      >
+                        <option value="">Selecione um plano</option>
+
+                        {activePlans.map((plan) => (
+                          <option key={plan.id} value={plan.id}>
+                            {plan.name} — {formatCurrency(plan.monthly_price)}
+                            /mês
+                          </option>
+                        ))}
+                      </select>
+
+                      {activePlans.length === 0 && (
+                        <p className="mt-2 text-xs text-red-600">
+                          Cadastre ou ative um plano antes de criar assinatura.
+                        </p>
+                      )}
+                    </div>
+
+                    <div>
+                      <Label>Status inicial</Label>
+
+                      <select
+                        value={createSubscriptionStatus}
+                        onChange={(event) =>
+                          setCreateSubscriptionStatus(
+                            event.target.value as ManageSubscriptionStatus,
+                          )
+                        }
+                        className="mt-2 h-10 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary"
+                      >
+                        <option value="ACTIVE">Ativa</option>
+                        <option value="PENDING">Pendente</option>
+                        <option value="OVERDUE">Em atraso</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <Label>Próximo vencimento</Label>
+
+                      <Input
+                        type="date"
+                        value={createSubscriptionNextBillingDate}
+                        onChange={(event) =>
+                          setCreateSubscriptionNextBillingDate(
+                            event.target.value,
+                          )
+                        }
+                        className="mt-2"
+                      />
+                    </div>
+
+                    <div className="md:col-span-2">
+                      <Label>Valor mensal</Label>
+
+                      <Input
+                        value={createSubscriptionMonthlyPrice}
+                        onChange={(event) =>
+                          setCreateSubscriptionMonthlyPrice(event.target.value)
+                        }
+                        placeholder="59,90"
+                        className="mt-2"
+                      />
+
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        O valor vem do plano selecionado, mas pode ser ajustado
+                        manualmente.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <DialogFooter>
@@ -662,7 +1230,7 @@ export default function MasterUsersPage() {
             <DialogTitle>Editar usuário</DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-4">
+          <div className="max-h-[70vh] space-y-4 overflow-y-auto pr-1">
             <div>
               <Label>Nome</Label>
 
@@ -691,7 +1259,7 @@ export default function MasterUsersPage() {
               <select
                 value={editRole}
                 onChange={(event) =>
-                  setEditRole(event.target.value as EditableUserRole)
+                  handleEditRoleChange(event.target.value as EditableUserRole)
                 }
                 className="mt-2 h-10 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-primary"
               >
@@ -699,6 +1267,141 @@ export default function MasterUsersPage() {
                 <option value="MASTER">Master</option>
               </select>
             </div>
+
+            {editRole === "RESTAURANT_OWNER" && (
+              <div className="rounded-xl border border-border bg-background p-4">
+                <div className="flex items-start gap-3">
+                  <input
+                    id="edit-with-subscription"
+                    type="checkbox"
+                    checked={editWithSubscription}
+                    onChange={(event) =>
+                      setEditWithSubscription(event.target.checked)
+                    }
+                    className="mt-1"
+                  />
+
+                  <div>
+                    <Label htmlFor="edit-with-subscription">
+                      Este dono possui plano/assinatura
+                    </Label>
+
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Desmarcar e salvar cancela a assinatura atual, se existir.
+                    </p>
+                  </div>
+                </div>
+
+                {editSubscription && (
+                  <div className="mt-4 rounded-lg border border-border bg-card p-3">
+                    <p className="text-xs text-muted-foreground">
+                      Assinatura atual
+                    </p>
+
+                    <p className="mt-1 text-sm font-medium text-foreground">
+                      {editSubscription.plan_name} —{" "}
+                      {formatCurrency(editSubscription.monthly_price)}/mês
+                    </p>
+
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Status:{" "}
+                      {getSubscriptionStatusLabel(editSubscription.status)} ·
+                      Vence em{" "}
+                      {formatDate(editSubscription.next_billing_date)}
+                    </p>
+                  </div>
+                )}
+
+                {editWithSubscription && (
+                  <div className="mt-4 grid gap-4 md:grid-cols-2">
+                    <div className="md:col-span-2">
+                      <Label>Plano</Label>
+
+                      <select
+                        value={editSubscriptionPlanId}
+                        onChange={(event) =>
+                          handleEditSubscriptionPlanChange(event.target.value)
+                        }
+                        className="mt-2 h-10 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary"
+                      >
+                        <option value="">Selecione um plano</option>
+
+                        {activePlans.map((plan) => (
+                          <option key={plan.id} value={plan.id}>
+                            {plan.name} — {formatCurrency(plan.monthly_price)}
+                            /mês
+                          </option>
+                        ))}
+                      </select>
+
+                      {activePlans.length === 0 && (
+                        <p className="mt-2 text-xs text-red-600">
+                          Cadastre ou ative um plano antes de criar assinatura.
+                        </p>
+                      )}
+                    </div>
+
+                    <div>
+                      <Label>Status</Label>
+
+                      <select
+                        value={editSubscriptionStatus}
+                        onChange={(event) =>
+                          setEditSubscriptionStatus(
+                            event.target.value as ManageSubscriptionStatus,
+                          )
+                        }
+                        className="mt-2 h-10 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary"
+                      >
+                        <option value="ACTIVE">Ativa</option>
+                        <option value="PENDING">Pendente</option>
+                        <option value="OVERDUE">Em atraso</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <Label>Próximo vencimento</Label>
+
+                      <Input
+                        type="date"
+                        value={editSubscriptionNextBillingDate}
+                        onChange={(event) =>
+                          setEditSubscriptionNextBillingDate(
+                            event.target.value,
+                          )
+                        }
+                        className="mt-2"
+                      />
+                    </div>
+
+                    <div className="md:col-span-2">
+                      <Label>Valor mensal</Label>
+
+                      <Input
+                        value={editSubscriptionMonthlyPrice}
+                        onChange={(event) =>
+                          setEditSubscriptionMonthlyPrice(event.target.value)
+                        }
+                        placeholder="59,90"
+                        className="mt-2"
+                      />
+
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        Ao trocar o plano, o valor é preenchido automaticamente,
+                        mas você pode ajustar manualmente.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {editRole === "MASTER" && editSubscription && (
+              <div className="rounded-xl border border-yellow-200 bg-yellow-50 p-4 text-sm text-yellow-800">
+                Este usuário possui assinatura. Se salvar como Master, a
+                assinatura atual será cancelada.
+              </div>
+            )}
           </div>
 
           <DialogFooter>
@@ -708,6 +1411,7 @@ export default function MasterUsersPage() {
               onClick={() => {
                 setEditDialogOpen(false);
                 setEditingUser(null);
+                setEditSubscription(null);
               }}
             >
               Cancelar

@@ -271,4 +271,74 @@ export async function cancelPayment(paymentId: string): Promise<Payment> {
   }
 
   return response.json();
+
+
+
+}
+
+
+export type CreateSubscriptionData = {
+  owner_user_id: string;
+  status?: "ACTIVE" | "PENDING" | "OVERDUE" | "CANCELED";
+  plan_name?: string;
+  monthly_price: number;
+  started_at?: string;
+  next_billing_date: string;
+};
+
+export type UpdateSubscriptionData = {
+  status?: "ACTIVE" | "PENDING" | "OVERDUE" | "CANCELED";
+  plan_name?: string;
+  monthly_price?: number;
+  started_at?: string;
+  next_billing_date?: string;
+};
+
+export async function createSubscription(
+  data: CreateSubscriptionData,
+): Promise<Subscription> {
+  const response = await apiFetch("/subscriptions", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      await getApiErrorMessage(response, "Erro ao criar assinatura"),
+    );
+  }
+
+  return response.json();
+}
+
+export async function updateSubscription(
+  id: string,
+  data: UpdateSubscriptionData,
+): Promise<Subscription> {
+  const response = await apiFetch(`/subscriptions/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      await getApiErrorMessage(response, "Erro ao atualizar assinatura"),
+    );
+  }
+
+  return response.json();
+}
+
+export async function cancelSubscription(id: string): Promise<Subscription> {
+  const response = await apiFetch(`/subscriptions/${id}/cancel`, {
+    method: "PATCH",
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      await getApiErrorMessage(response, "Erro ao cancelar assinatura"),
+    );
+  }
+
+  return response.json();
 }

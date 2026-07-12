@@ -399,7 +399,8 @@ export default function MasterRestaurantsPage() {
               </h1>
 
               <p className="mt-1 text-muted-foreground">
-                Gerencie os restaurantes cadastrados na plataforma.
+                Gerencie os restaurantes cadastrados. O plano fica vinculado ao
+                dono da conta.
               </p>
             </div>
 
@@ -453,7 +454,6 @@ export default function MasterRestaurantsPage() {
                     <th className="px-5 py-4 font-medium">Restaurante</th>
                     <th className="px-5 py-4 font-medium">Slug</th>
                     <th className="px-5 py-4 font-medium">Dono</th>
-                    <th className="px-5 py-4 font-medium">Plano</th>
                     <th className="px-5 py-4 font-medium">Status</th>
                     <th className="px-5 py-4 font-medium">Cadastro</th>
                     <th className="px-5 py-4 text-right font-medium">Ações</th>
@@ -464,7 +464,7 @@ export default function MasterRestaurantsPage() {
                   {loading && (
                     <tr>
                       <td
-                        colSpan={7}
+                        colSpan={6}
                         className="px-5 py-8 text-center text-muted-foreground"
                       >
                         Carregando restaurantes...
@@ -475,7 +475,7 @@ export default function MasterRestaurantsPage() {
                   {!loading && filteredRestaurants.length === 0 && (
                     <tr>
                       <td
-                        colSpan={7}
+                        colSpan={6}
                         className="px-5 py-8 text-center text-muted-foreground"
                       >
                         Nenhum restaurante encontrado.
@@ -534,18 +534,16 @@ export default function MasterRestaurantsPage() {
                           </td>
 
                           <td className="px-5 py-4">
-                            <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
-                              Completo
-                            </span>
-                          </td>
-
-                          <td className="px-5 py-4">
                             <span
                               className={`rounded-full px-3 py-1 text-xs font-medium ${
-                                statusStyles[restaurant.status]
+                                statusStyles[
+                                  restaurant.status as keyof typeof statusStyles
+                                ] ?? "bg-zinc-100 text-zinc-700"
                               }`}
                             >
-                              {statusLabels[restaurant.status]}
+                              {statusLabels[
+                                restaurant.status as keyof typeof statusLabels
+                              ] ?? restaurant.status}
                             </span>
                           </td>
 
@@ -799,7 +797,7 @@ export default function MasterRestaurantsPage() {
         title="Bloquear restaurante"
         description={`Tem certeza que deseja bloquear ${
           selectedRestaurant?.name ?? "este restaurante"
-        }? O dono não poderá gerenciar cardápio, produtos, categorias, banners ou dashboard.`}
+        }? O dono não poderá gerenciar este cardápio enquanto estiver bloqueado.`}
         type="danger"
         confirmText="Bloquear"
         loading={actionLoading}
