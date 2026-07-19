@@ -50,8 +50,10 @@ import { getPlans, type Plan } from "@/services/planService";
 import {
   cancelSubscription,
   createSubscription,
+  getPayments,
   getSubscriptions,
   updateSubscription,
+  type Payment,
   type Subscription,
 } from "@/services/financeService";
 
@@ -65,7 +67,11 @@ type SubscriptionFilter =
   | "PENDING"
   | "OVERDUE"
   | "CANCELED"
-  | "NONE";
+  | "NONE"
+  | "FINANCE_PENDING"
+  | "FINANCE_OVERDUE"
+  | "FINANCE_BLOCKED"
+  | "NO_PAYMENT";
 
 type ManageSubscriptionStatus = "ACTIVE" | "PENDING" | "OVERDUE";
 
@@ -99,6 +105,149 @@ function getSubscriptionStatusStyle(status?: string) {
   if (status === "CANCELED") return "bg-zinc-100 text-zinc-700";
 
   return "bg-zinc-100 text-zinc-700";
+}
+
+type OwnerFinancialStatus =
+  | "PAID"
+  | "PENDING"
+  | "OVERDUE"
+  | "BLOCKED"
+  | "CANCELED"
+  | "NO_PAYMENT"
+  | "NO_SUBSCRIPTION";
+
+function getOwnerFinancialStatusLabel(status: OwnerFinancialStatus) {
+  if (status === "PAID") return "Pago";
+  if (status === "PENDING") return "Pendente";
+  if (status === "OVERDUE") return "Atrasado";
+  if (status === "BLOCKED") return "Bloqueável";
+  if (status === "CANCELED") return "Cancelado";
+  if (status === "NO_PAYMENT") return "Sem fatura";
+
+  return "Sem assinatura";
+}
+
+function getOwnerFinancialStatusStyle(status: OwnerFinancialStatus) {
+  if (status === "PAID") return "bg-green-100 text-green-700";
+  if (status === "PENDING") return "bg-yellow-100 text-yellow-700";
+  if (status === "OVERDUE") return "bg-orange-100 text-orange-700";
+  if (status === "BLOCKED") return "bg-red-100 text-red-700";
+  if (status === "CANCELED") return "bg-zinc-100 text-zinc-700";
+
+  return "bg-zinc-100 text-zinc-700";
+}
+
+function getCleanDate(value?: string | null) {
+  return value?.split("T")[0] ?? "";
+}
+
+function getLocalDateFromDateString(value?: string | null) {
+  const cleanDate = getCleanDate(value);
+  const [year, month, day] = cleanDate.split("-").map(Number);
+
+  if (!year || !month || !day) {
+    return null;
+  }
+
+  return new Date(year, month - 1, day);
+}
+
+function getDaysLate(value?: string | null) {
+  const date = getLocalDateFromDateString(value);
+
+  if (!date) return 0;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  date.setHours(0, 0, 0, 0);
+
+  const diffInMs = today.getTime() - date.getTime();
+
+  if (diffInMs <= 0) return 0;
+
+  return Math.floor(diffInMs / (1000 * 60 * 60 * 24));
+}
+
+function getPaymentDateTime(payment: Payment) {
+  const date = getLocalDateFromDateString(payment.due_date);
+
+  return date?.getTime() ?? 0;
+}
+
+function getOwnerFinancialInfo(
+  subscription?: Subscription | null,
+  payment?: Payment | null,
+) {
+  if (!subscription || subscription.status === "CANCELED") {
+    return {
+      status: "NO_SUBSCRIPTION" as OwnerFinancialStatus,
+      label: getOwnerFinancialStatusLabel("NO_SUBSCRIPTION"),
+      style: getOwnerFinancialStatusStyle("NO_SUBSCRIPTION"),
+      description: "Sem assinatura ativa",
+      dueDate: null,
+    };
+  }
+
+  if (!payment) {
+    return {
+      status: "NO_PAYMENT" as OwnerFinancialStatus,
+      label: getOwnerFinancialStatusLabel("NO_PAYMENT"),
+      style: getOwnerFinancialStatusStyle("NO_PAYMENT"),
+      description: `Próximo vencimento: ${formatDate(subscription.next_billing_date)}`,
+      dueDate: subscription.next_billing_date,
+    };
+  }
+
+  const daysLate = getDaysLate(payment.due_date);
+
+  if (payment.status === "PAID") {
+    return {
+      status: "PAID" as OwnerFinancialStatus,
+      label: getOwnerFinancialStatusLabel("PAID"),
+      style: getOwnerFinancialStatusStyle("PAID"),
+      description: `Fatura paga · venc. ${formatDate(payment.due_date)}`,
+      dueDate: payment.due_date,
+    };
+  }
+
+  if (payment.status === "CANCELED") {
+    return {
+      status: "CANCELED" as OwnerFinancialStatus,
+      label: getOwnerFinancialStatusLabel("CANCELED"),
+      style: getOwnerFinancialStatusStyle("CANCELED"),
+      description: `Fatura cancelada · venc. ${formatDate(payment.due_date)}`,
+      dueDate: payment.due_date,
+    };
+  }
+
+  if (daysLate > 3) {
+    return {
+      status: "BLOCKED" as OwnerFinancialStatus,
+      label: getOwnerFinancialStatusLabel("BLOCKED"),
+      style: getOwnerFinancialStatusStyle("BLOCKED"),
+      description: `Vencida há ${daysLate} dias · deve bloquear`,
+      dueDate: payment.due_date,
+    };
+  }
+
+  if (daysLate > 0) {
+    return {
+      status: "OVERDUE" as OwnerFinancialStatus,
+      label: getOwnerFinancialStatusLabel("OVERDUE"),
+      style: getOwnerFinancialStatusStyle("OVERDUE"),
+      description: `Vencida há ${daysLate} dia(s)`,
+      dueDate: payment.due_date,
+    };
+  }
+
+  return {
+    status: "PENDING" as OwnerFinancialStatus,
+    label: getOwnerFinancialStatusLabel("PENDING"),
+    style: getOwnerFinancialStatusStyle("PENDING"),
+    description: `Fatura vence em ${formatDate(payment.due_date)}`,
+    dueDate: payment.due_date,
+  };
 }
 
 function formatDate(value?: string | null) {
@@ -163,6 +312,7 @@ export default function MasterUsersPage() {
 
   const [users, setUsers] = useState<User[]>([]);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
+  const [payments, setPayments] = useState<Payment[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
 
   const [loading, setLoading] = useState(true);
@@ -243,14 +393,17 @@ export default function MasterUsersPage() {
     try {
       setLoading(true);
 
-      const [usersData, subscriptionsData, plansData] = await Promise.all([
-        getUsers(),
-        getSubscriptions(),
-        getPlans(),
-      ]);
+      const [usersData, subscriptionsData, paymentsData, plansData] =
+        await Promise.all([
+          getUsers(),
+          getSubscriptions(),
+          getPayments(),
+          getPlans(),
+        ]);
 
       setUsers(usersData);
       setSubscriptions(subscriptionsData);
+      setPayments(paymentsData);
       setPlans(plansData);
     } catch (error) {
       console.error(error);
@@ -300,6 +453,22 @@ export default function MasterUsersPage() {
     return map;
   }, [subscriptions]);
 
+  const paymentByOwnerId = useMemo(() => {
+    const map = new Map<string, Payment>();
+
+    const orderedPayments = [...payments]
+      .filter((payment) => payment.status !== "CANCELED")
+      .sort((a, b) => getPaymentDateTime(b) - getPaymentDateTime(a));
+
+    for (const payment of orderedPayments) {
+      if (!map.has(payment.owner_user_id)) {
+        map.set(payment.owner_user_id, payment);
+      }
+    }
+
+    return map;
+  }, [payments]);
+
   const filteredUsers = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
 
@@ -309,13 +478,17 @@ export default function MasterUsersPage() {
       }
 
       const subscription = subscriptionByOwnerId.get(user.id);
+      const payment = paymentByOwnerId.get(user.id);
+      const financialInfo = getOwnerFinancialInfo(subscription, payment);
 
       const matchesSearch =
         user.name.toLowerCase().includes(normalizedSearch) ||
         user.email.toLowerCase().includes(normalizedSearch) ||
         (subscription?.plan_name ?? "")
           .toLowerCase()
-          .includes(normalizedSearch);
+          .includes(normalizedSearch) ||
+        financialInfo.label.toLowerCase().includes(normalizedSearch) ||
+        financialInfo.description.toLowerCase().includes(normalizedSearch);
 
       const matchesRole = roleFilter === "ALL" || user.role === roleFilter;
 
@@ -329,6 +502,14 @@ export default function MasterUsersPage() {
         (subscriptionFilter === "NONE" &&
           user.role === "RESTAURANT_OWNER" &&
           (!subscription || subscription.status === "CANCELED")) ||
+        (subscriptionFilter === "FINANCE_PENDING" &&
+          financialInfo.status === "PENDING") ||
+        (subscriptionFilter === "FINANCE_OVERDUE" &&
+          financialInfo.status === "OVERDUE") ||
+        (subscriptionFilter === "FINANCE_BLOCKED" &&
+          financialInfo.status === "BLOCKED") ||
+        (subscriptionFilter === "NO_PAYMENT" &&
+          financialInfo.status === "NO_PAYMENT") ||
         subscription?.status === subscriptionFilter;
 
       return (
@@ -345,6 +526,7 @@ export default function MasterUsersPage() {
     statusFilter,
     subscriptionFilter,
     subscriptionByOwnerId,
+    paymentByOwnerId,
   ]);
 
   function handleViewUser(user: User) {
@@ -807,10 +989,12 @@ export default function MasterUsersPage() {
                 }
                 className="h-10 rounded-lg border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary"
               >
-                <option value="ALL">Todas as assinaturas</option>
+                <option value="ALL">Todos os financeiros</option>
                 <option value="ACTIVE">Assinatura ativa</option>
-                <option value="PENDING">Assinatura pendente</option>
-                <option value="OVERDUE">Assinatura atrasada</option>
+                <option value="FINANCE_PENDING">Fatura pendente</option>
+                <option value="FINANCE_OVERDUE">Fatura atrasada</option>
+                <option value="FINANCE_BLOCKED">Bloqueio financeiro</option>
+                <option value="NO_PAYMENT">Sem fatura</option>
                 <option value="CANCELED">Assinatura cancelada</option>
                 <option value="NONE">Sem assinatura</option>
               </select>
@@ -826,7 +1010,7 @@ export default function MasterUsersPage() {
                     <th className="px-5 py-4 font-medium">E-mail</th>
                     <th className="px-5 py-4 font-medium">Função</th>
                     <th className="px-5 py-4 font-medium">Plano</th>
-                    <th className="px-5 py-4 font-medium">Assinatura</th>
+                    <th className="px-5 py-4 font-medium">Financeiro</th>
                     <th className="px-5 py-4 font-medium">Status usuário</th>
                     <th className="px-5 py-4 font-medium">Cadastro</th>
                     <th className="px-5 py-4 text-right font-medium">Ações</th>
@@ -859,6 +1043,11 @@ export default function MasterUsersPage() {
                   {!loading &&
                     filteredUsers.map((user) => {
                       const subscription = subscriptionByOwnerId.get(user.id);
+                      const payment = paymentByOwnerId.get(user.id);
+                      const financialInfo = getOwnerFinancialInfo(
+                        subscription,
+                        payment,
+                      );
                       const isOwner = user.role === "RESTAURANT_OWNER";
 
                       return (
@@ -920,32 +1109,25 @@ export default function MasterUsersPage() {
                           </td>
 
                           <td className="px-5 py-4">
-                            {isOwner && subscription ? (
+                            {isOwner ? (
                               <div>
                                 <span
-                                  className={`rounded-full px-3 py-1 text-xs font-medium ${getSubscriptionStatusStyle(
-                                    subscription.status,
-                                  )}`}
+                                  className={`rounded-full px-3 py-1 text-xs font-medium ${financialInfo.style}`}
                                 >
-                                  {getSubscriptionStatusLabel(
-                                    subscription.status,
-                                  )}
+                                  {financialInfo.label}
                                 </span>
 
                                 <p className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
                                   <Calendar size={13} />
-                                  Vence em{" "}
-                                  {formatDate(
-                                    subscription.next_billing_date,
-                                  )}
+                                  {financialInfo.description}
                                 </p>
+
+                                {subscription && (
+                                  <p className="mt-1 text-xs text-muted-foreground">
+                                    Assinatura: {getSubscriptionStatusLabel(subscription.status)}
+                                  </p>
+                                )}
                               </div>
-                            ) : isOwner ? (
-                              <span
-                                className={`rounded-full px-3 py-1 text-xs font-medium ${getSubscriptionStatusStyle()}`}
-                              >
-                                Sem assinatura
-                              </span>
                             ) : (
                               <span className="text-sm text-muted-foreground">
                                 -

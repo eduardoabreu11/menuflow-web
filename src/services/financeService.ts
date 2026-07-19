@@ -329,6 +329,19 @@ export async function updateSubscription(
   return response.json();
 }
 
+
+export async function deletePayment(id: string): Promise<void> {
+  const response = await apiFetch(`/payments/${id}`, {
+    method: "DELETE",
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      await getApiErrorMessage(response, "Erro ao excluir fatura"),
+    );
+  }
+}
+
 export async function cancelSubscription(id: string): Promise<Subscription> {
   const response = await apiFetch(`/subscriptions/${id}/cancel`, {
     method: "PATCH",

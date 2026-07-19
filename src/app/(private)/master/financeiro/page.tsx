@@ -14,6 +14,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Trash2,
   Wallet,
   X,
   XCircle,
@@ -27,6 +28,7 @@ import {
   cancelPayment,
   createAsaasCharge,
   createPayment,
+  deletePayment,
   generateMonthlyPayments,
   getPaymentReminders,
   getPayments,
@@ -313,6 +315,9 @@ export default function MasterFinanceiroPage() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [asaasChargeLoading, setAsaasChargeLoading] = useState<string | null>(
+    null,
+  );
+  const [deletePaymentLoading, setDeletePaymentLoading] = useState<string | null>(
     null,
   );
   const [generateMonthlyLoading, setGenerateMonthlyLoading] = useState(false);
@@ -877,6 +882,44 @@ export default function MasterFinanceiroPage() {
     }
   }
 
+  async function handleDeletePayment(payment: Payment) {
+    const confirmed = window.confirm(
+      [
+        "Deseja excluir esta fatura do banco de dados?",
+        "",
+        "Atenção:",
+        "- Fatura paga não pode ser excluída.",
+        "- Fatura Asaas precisa estar cancelada antes de excluir.",
+        "- Essa ação remove a fatura e os lembretes vinculados.",
+      ].join("\n"),
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setDeletePaymentLoading(payment.id);
+
+      await deletePayment(payment.id);
+
+      setPayments((currentPayments) =>
+        currentPayments.filter((currentPayment) => currentPayment.id !== payment.id),
+      );
+
+      setReminders((currentReminders) =>
+        currentReminders.filter(
+          (currentReminder) => currentReminder.payment_id !== payment.id,
+        ),
+      );
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Erro ao excluir fatura";
+
+      alert(message);
+    } finally {
+      setDeletePaymentLoading(null);
+    }
+  }
+
   function handleViewPayment(payment: Payment) {
     const status = getEffectiveStatus(payment);
     const gatewayProvider = getPaymentGatewayProvider(payment);
@@ -1323,9 +1366,12 @@ export default function MasterFinanceiroPage() {
                             actionLoading === payment.id;
                           const isCurrentAsaasChargeLoading =
                             asaasChargeLoading === payment.id;
+                          const isCurrentDeletePaymentLoading =
+                            deletePaymentLoading === payment.id;
                           const isAnyPaymentActionLoading =
                             isCurrentActionLoading ||
-                            isCurrentAsaasChargeLoading;
+                            isCurrentAsaasChargeLoading ||
+                            isCurrentDeletePaymentLoading;
 
                           return (
                             <tr key={payment.id} className="hover:bg-accent/50">
@@ -1452,6 +1498,27 @@ export default function MasterFinanceiroPage() {
                                     title="Cancelar fatura"
                                   >
                                     <XCircle size={16} />
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeletePayment(payment)}
+                                    disabled={
+                                      isPaid ||
+                                      isAnyPaymentActionLoading
+                                    }
+                                    className="rounded-lg border border-border p-2 text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
+                                    title={
+                                      isPaid
+                                        ? "Fatura paga não pode ser excluída"
+                                        : "Excluir fatura do banco"
+                                    }
+                                  >
+                                    {isCurrentDeletePaymentLoading ? (
+                                      <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                      <Trash2 size={16} />
+                                    )}
                                   </button>
                                 </div>
                               </td>

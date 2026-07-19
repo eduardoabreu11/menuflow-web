@@ -106,6 +106,7 @@ export default function MenuSettingsPage() {
 
   const restaurantIsBlocked = restaurant?.status === "BLOCKED";
   const isUploading = logoUploading || bannerUploading;
+  const bannerLimitReached = !editingBannerId && banners.length >= 3;
 
   async function loadBanners(restaurantId: string) {
     try {
@@ -226,6 +227,12 @@ export default function MenuSettingsPage() {
 
     if (restaurantIsBlocked) {
       alert("Restaurante bloqueado. Não é possível alterar banners.");
+      event.target.value = "";
+      return;
+    }
+
+    if (bannerLimitReached) {
+      alert("Limite de 3 banners atingido. Exclua um banner para cadastrar outro.");
       event.target.value = "";
       return;
     }
@@ -357,11 +364,11 @@ export default function MenuSettingsPage() {
     }
 
     if (!bannerImageUrl.trim()) {
-      alert("Informe a imagem do banner");
+      alert("Envie uma imagem para o banner");
       return;
     }
 
-    if (!editingBannerId && banners.length >= 3) {
+    if (bannerLimitReached) {
       alert("Você pode cadastrar no máximo 3 banners");
       return;
     }
@@ -522,133 +529,154 @@ export default function MenuSettingsPage() {
       <AdminSidebar />
 
       <section className="ml-64 min-h-screen p-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-foreground">Cardápio</h1>
+        <div className="mb-8 rounded-2xl border border-border bg-card p-6">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-sm font-medium text-primary">
+                Configurações públicas
+              </p>
 
-          <p className="mt-2 text-muted-foreground">
-            Configure as informações que aparecem no cardápio público do seu
-            restaurante.
-          </p>
+              <h1 className="mt-1 text-3xl font-bold text-foreground">
+                Cardápio
+              </h1>
+
+              <p className="mt-2 text-muted-foreground">
+                Configure nome, descrição, logo, banners e contato que aparecem
+                no cardápio público do seu restaurante.
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-border bg-background px-4 py-3 text-sm">
+              <p className="font-semibold text-foreground">{restaurant.name}</p>
+
+              <p className="mt-1 text-xs text-muted-foreground">
+                /cardapio/{restaurant.slug}
+              </p>
+            </div>
+          </div>
 
           {restaurantIsBlocked && (
-            <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+            <p className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
               Este restaurante está bloqueado. Você pode visualizar as
               informações, mas não pode editar dados, contato ou banners.
             </p>
           )}
         </div>
 
-        <div className="space-y-6">
+        <div className="w-full space-y-6">
           <div className="rounded-2xl border border-border bg-card p-6">
-            <div className="mb-6 flex items-center gap-2">
-              <Store className="h-5 w-5 text-primary" />
+            <div className="mb-6 flex items-start justify-between gap-4">
+              <div className="flex items-start gap-2">
+                <Store className="mt-0.5 h-5 w-5 text-primary" />
 
-              <h2 className="text-xl font-semibold text-card-foreground">
-                Dados do restaurante
-              </h2>
+                <div>
+                  <h2 className="text-xl font-semibold text-card-foreground">
+                    Dados do restaurante
+                  </h2>
+
+                  <p className="text-sm text-muted-foreground">
+                    Informações principais exibidas no topo do cardápio.
+                  </p>
+                </div>
+              </div>
             </div>
 
-            <div className="space-y-5">
-              <div>
-                <Label>Nome do restaurante *</Label>
+            <div className="grid gap-6 xl:grid-cols-[1fr_280px]">
+              <div className="space-y-5">
+                <div>
+                  <Label>Nome do restaurante *</Label>
 
-                <Input
-                  value={name}
-                  disabled={restaurantIsBlocked}
-                  onChange={(event) => setName(event.target.value)}
-                  className="mt-2 border-border bg-background text-foreground disabled:cursor-not-allowed disabled:opacity-60"
-                />
-              </div>
+                  <Input
+                    value={name}
+                    disabled={restaurantIsBlocked}
+                    onChange={(event) => setName(event.target.value)}
+                    className="mt-2 border-border bg-background text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                  />
+                </div>
 
-              <div>
-                <Label>Descrição do restaurante</Label>
+                <div>
+                  <Label>Descrição do restaurante</Label>
 
-                <Textarea
-                  value={description}
-                  disabled={restaurantIsBlocked}
-                  onChange={(event) => setDescription(event.target.value)}
-                  className="mt-2 h-[120px] resize-none border-border bg-background text-foreground disabled:cursor-not-allowed disabled:opacity-60"
-                />
-              </div>
-
-              <div>
-                <Label>Logo do restaurante</Label>
-
-                <div className="mt-2 flex items-center gap-4">
-                  <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-2xl border border-border bg-background text-4xl">
-                    {logoUrl ? (
-                      <img
-                        src={logoUrl}
-                        alt="Logo do restaurante"
-                        className="h-full w-full object-cover"
-                      />
-                    ) : (
-                      "🍽️"
-                    )}
-                  </div>
-
-                  <div className="flex-1">
-                    <div className="flex flex-wrap gap-3">
-                      <Label
-                        htmlFor="restaurant-logo-upload"
-                        className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-border bg-background px-4 text-sm font-medium text-foreground hover:bg-accent"
-                      >
-                        {logoUploading ? (
-                          <>
-                            <Loader2 size={16} className="animate-spin" />
-                            Enviando logo...
-                          </>
-                        ) : (
-                          <>
-                            <Upload size={16} />
-                            Alterar logo
-                          </>
-                        )}
-                      </Label>
-
-                      <Input
-                        id="restaurant-logo-upload"
-                        type="file"
-                        accept="image/*"
-                        disabled={restaurantIsBlocked || logoUploading}
-                        onChange={handleLogoFileChange}
-                        className="hidden"
-                      />
-
-                      {logoUrl && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          disabled={restaurantIsBlocked || logoUploading}
-                          onClick={() => setLogoUrl("")}
-                          className="border-red-500/20 bg-red-500/10 text-red-500 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          <X size={16} />
-                          Remover logo
-                        </Button>
-                      )}
-                    </div>
-
-                    <p className="mt-2 text-xs text-muted-foreground">
-                      Envie uma imagem PNG, JPG, JPEG ou WEBP até 5MB. Depois
-                      clique em salvar dados do restaurante.
-                    </p>
-
-                    <Input
-                      value={logoUrl}
-                      disabled={restaurantIsBlocked}
-                      onChange={(event) => setLogoUrl(event.target.value)}
-                      placeholder="URL da logo"
-                      className="mt-3 border-border bg-background text-foreground disabled:cursor-not-allowed disabled:opacity-60"
-                    />
-                  </div>
+                  <Textarea
+                    value={description}
+                    disabled={restaurantIsBlocked}
+                    onChange={(event) => setDescription(event.target.value)}
+                    className="mt-2 h-[140px] resize-none border-border bg-background text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                  />
                 </div>
               </div>
 
+              <div className="rounded-2xl border border-border bg-background p-4">
+                <Label>Logo do restaurante</Label>
+
+                <div className="mt-3 flex aspect-square w-full items-center justify-center overflow-hidden rounded-2xl border border-border bg-card text-5xl">
+                  {logoUrl ? (
+                    <img
+                      src={logoUrl}
+                      alt="Logo do restaurante"
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    "🍽️"
+                  )}
+                </div>
+
+                <div className="mt-4 space-y-3">
+                  <Label
+                    htmlFor="restaurant-logo-upload"
+                    className={`inline-flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 text-sm font-medium text-foreground hover:bg-accent ${
+                      restaurantIsBlocked || logoUploading
+                        ? "pointer-events-none cursor-not-allowed opacity-60"
+                        : ""
+                    }`}
+                  >
+                    {logoUploading ? (
+                      <>
+                        <Loader2 size={16} className="animate-spin" />
+                        Enviando logo...
+                      </>
+                    ) : (
+                      <>
+                        <Upload size={16} />
+                        Enviar/alterar logo
+                      </>
+                    )}
+                  </Label>
+
+                  <Input
+                    id="restaurant-logo-upload"
+                    type="file"
+                    accept="image/*"
+                    disabled={restaurantIsBlocked || logoUploading}
+                    onChange={handleLogoFileChange}
+                    className="hidden"
+                  />
+
+                  {logoUrl && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={restaurantIsBlocked || logoUploading}
+                      onClick={() => setLogoUrl("")}
+                      className="w-full border-red-500/20 bg-red-500/10 text-red-500 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <X size={16} />
+                      Remover logo
+                    </Button>
+                  )}
+                </div>
+
+                <p className="mt-4 text-xs text-muted-foreground">
+                  PNG, JPG, JPEG, WEBP ou GIF até 5MB.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-center">
               <Button
                 onClick={handleSaveRestaurantData}
                 disabled={loadingRestaurant || restaurantIsBlocked || isUploading}
-                className="w-full bg-primary text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                className="min-w-[240px] bg-primary px-6 text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Save size={16} />
                 {loadingRestaurant
@@ -661,100 +689,117 @@ export default function MenuSettingsPage() {
           </div>
 
           <div className="rounded-2xl border border-border bg-card p-6">
-            <div className="mb-6 flex items-center gap-2">
-              <ImagePlus className="h-5 w-5 text-primary" />
+            <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="flex items-start gap-2">
+                <ImagePlus className="mt-0.5 h-5 w-5 text-primary" />
 
-              <h2 className="text-xl font-semibold text-card-foreground">
-                Banners do cardápio
-              </h2>
+                <div>
+                  <h2 className="text-xl font-semibold text-card-foreground">
+                    Banners do cardápio
+                  </h2>
+
+                  <p className="text-sm text-muted-foreground">
+                    Configure até 3 banners para aparecerem no topo do cardápio
+                    público.
+                  </p>
+                </div>
+              </div>
+
+              <span className="w-fit rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
+                {banners.length}/3 banners cadastrados
+              </span>
             </div>
 
-            <p className="mb-5 text-sm text-muted-foreground">
-              Configure até 3 banners para aparecerem no topo do cardápio
-              público.
-            </p>
-
             <div className="mb-5 rounded-xl border border-border bg-background p-4">
-              <Label>
-                {editingBannerId ? "Editar banner" : "Novo banner"}
-              </Label>
-
-              <div className="mt-2 flex flex-wrap gap-3">
-                <Input
-                  value={bannerImageUrl}
-                  disabled={restaurantIsBlocked}
-                  onChange={(event) => setBannerImageUrl(event.target.value)}
-                  placeholder="URL da imagem do banner"
-                  className="min-w-[320px] flex-1 border-border bg-card text-foreground disabled:cursor-not-allowed disabled:opacity-60"
-                />
-
-                <Label
-                  htmlFor="banner-image-upload"
-                  className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 text-sm font-medium text-foreground hover:bg-accent"
-                >
-                  {bannerUploading ? (
-                    <>
-                      <Loader2 size={16} className="animate-spin" />
-                      Enviando...
-                    </>
-                  ) : (
-                    <>
-                      <Upload size={16} />
-                      Enviar imagem
-                    </>
-                  )}
+              <div>
+                <Label>
+                  {editingBannerId ? "Editar banner" : "Novo banner"}
                 </Label>
 
-                <Input
-                  id="banner-image-upload"
-                  type="file"
-                  accept="image/*"
-                  disabled={restaurantIsBlocked || bannerUploading}
-                  onChange={handleBannerFileChange}
-                  className="hidden"
-                />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Envie uma imagem para cadastrar o banner.
+                </p>
 
-                <Button
-                  onClick={handleSaveBanner}
-                  disabled={
-                    savingBanner ||
-                    bannerUploading ||
-                    restaurantIsBlocked
-                  }
-                  className="bg-primary text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <Save size={16} />
-                  {savingBanner
-                    ? "Salvando..."
-                    : editingBannerId
-                      ? "Atualizar"
-                      : "Cadastrar"}
-                </Button>
-
-                {editingBannerId && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={handleCancelEditBanner}
-                    disabled={savingBanner || bannerUploading}
-                    className="border-border bg-card text-foreground hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    Cancelar
-                  </Button>
+                {bannerLimitReached && (
+                  <p className="mt-2 text-xs font-medium text-muted-foreground">
+                    Limite de 3 banners atingido. Exclua um banner para
+                    cadastrar outro.
+                  </p>
                 )}
               </div>
+
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                  <Label
+                    htmlFor="banner-image-upload"
+                    className={`inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 text-sm font-medium text-foreground hover:bg-accent ${
+                      restaurantIsBlocked || bannerUploading || bannerLimitReached
+                        ? "pointer-events-none cursor-not-allowed opacity-60"
+                        : ""
+                    }`}
+                  >
+                    {bannerUploading ? (
+                      <>
+                        <Loader2 size={16} className="animate-spin" />
+                        Enviando...
+                      </>
+                    ) : (
+                      <>
+                        <Upload size={16} />
+                        Escolher imagem
+                      </>
+                    )}
+                  </Label>
+
+                  <Input
+                    id="banner-image-upload"
+                    type="file"
+                    accept="image/*"
+                    disabled={
+                      restaurantIsBlocked || bannerUploading || bannerLimitReached
+                    }
+                    onChange={handleBannerFileChange}
+                    className="hidden"
+                  />
+
+                  {bannerImageUrl && (
+                    <Button
+                      onClick={handleSaveBanner}
+                      disabled={savingBanner || bannerUploading || restaurantIsBlocked}
+                      className="bg-primary text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <Save size={16} />
+                      {savingBanner
+                        ? "Salvando..."
+                        : editingBannerId
+                          ? "Atualizar"
+                          : "Cadastrar"}
+                    </Button>
+                  )}
+
+                  {editingBannerId && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleCancelEditBanner}
+                      disabled={savingBanner || bannerUploading}
+                      className="border-border bg-card text-foreground hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Cancelar
+                    </Button>
+                  )}
+                </div>
 
               {bannerImageUrl && (
                 <div className="mt-4 overflow-hidden rounded-xl border border-border bg-card">
                   <img
                     src={bannerImageUrl}
                     alt="Prévia do banner"
-                    className="h-44 w-full object-cover"
+                    className="h-56 w-full object-cover"
                   />
 
                   <div className="flex items-center justify-between gap-3 p-3">
                     <p className="truncate text-xs text-muted-foreground">
-                      {bannerImageUrl}
+                      Imagem selecionada para o banner
                     </p>
 
                     <Button
@@ -770,11 +815,6 @@ export default function MenuSettingsPage() {
                   </div>
                 </div>
               )}
-
-              <p className="mt-2 text-xs text-muted-foreground">
-                Você pode colar uma URL ou enviar uma imagem. Limite: 3
-                banners.
-              </p>
             </div>
 
             {loadingBanners && (
@@ -784,7 +824,7 @@ export default function MenuSettingsPage() {
             )}
 
             {!loadingBanners && banners.length === 0 && (
-              <div className="rounded-xl border border-dashed border-border bg-background p-6 text-center">
+              <div className="rounded-xl border border-dashed border-border bg-background p-8 text-center">
                 <ImagePlus className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
 
                 <p className="text-sm text-muted-foreground">
@@ -793,24 +833,24 @@ export default function MenuSettingsPage() {
               </div>
             )}
 
-            <div className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {banners.map((banner, index) => (
                 <div
                   key={banner.id}
-                  className="flex items-center justify-between rounded-xl border border-border bg-background p-4"
+                  className="overflow-hidden rounded-2xl border border-border bg-background"
                 >
-                  <div className="flex items-center gap-4">
-                    <div className="flex h-24 w-40 items-center justify-center overflow-hidden rounded-xl border border-border bg-card">
-                      {banner.image_url ? (
-                        <img
-                          src={banner.image_url}
-                          alt={`Banner ${index + 1}`}
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        <div className="text-center">
+                  <div className="relative h-56 bg-card">
+                    {banner.image_url ? (
+                      <img
+                        src={banner.image_url}
+                        alt={`Banner ${index + 1}`}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-center">
+                        <div>
                           <ImagePlus
-                            size={24}
+                            size={28}
                             className="mx-auto mb-2 text-primary"
                           />
 
@@ -818,54 +858,58 @@ export default function MenuSettingsPage() {
                             Sem imagem
                           </p>
                         </div>
-                      )}
-                    </div>
+                      </div>
+                    )}
 
-                    <div>
-                      <p className="font-medium text-foreground">
-                        Banner {index + 1}
-                      </p>
+                    <span className="absolute right-3 top-3 rounded-full bg-background/90 px-3 py-1 text-xs font-medium text-foreground">
+                      Banner {index + 1}
+                    </span>
+                  </div>
 
-                      <p className="mt-1 max-w-[420px] truncate text-sm text-muted-foreground">
-                        {banner.image_url}
-                      </p>
+                  <div className="space-y-4 p-4">
+                    <p className="truncate text-xs text-muted-foreground">
+                      {banner.image_url || "Sem URL de imagem"}
+                    </p>
 
-                      <div className="mt-3 flex gap-2">
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-center gap-3 rounded-xl border border-border bg-card px-3 py-2">
+                        <Switch
+                          checked={banner.is_active}
+                          disabled={restaurantIsBlocked}
+                          onCheckedChange={() => handleToggleBanner(banner)}
+                        />
+
+                        <span className="text-sm text-muted-foreground">
+                          {banner.is_active ? "Ativo" : "Inativo"}
+                        </span>
+                      </div>
+
+                      <div className="flex flex-wrap items-center justify-center gap-2">
                         <Button
                           type="button"
                           variant="outline"
+                          size="sm"
                           disabled={restaurantIsBlocked}
                           onClick={() => handleEditBanner(banner)}
                           className="border-border bg-card text-foreground hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
                         >
-                          <Upload size={16} />
-                          Alterar imagem
+                          <Upload size={15} />
+                          Alterar banner
                         </Button>
 
                         <Button
                           type="button"
                           variant="outline"
+                          size="sm"
                           disabled={restaurantIsBlocked}
                           onClick={() => handleOpenDeleteBanner(banner)}
                           className="border-red-500/20 bg-red-500/10 text-red-500 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
                         >
-                          <Trash2 size={16} />
+                          <Trash2 size={15} />
                           Excluir
                         </Button>
                       </div>
                     </div>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <Switch
-                      checked={banner.is_active}
-                      disabled={restaurantIsBlocked}
-                      onCheckedChange={() => handleToggleBanner(banner)}
-                    />
-
-                    <span className="w-14 text-sm text-muted-foreground">
-                      {banner.is_active ? "Ativo" : "Inativo"}
-                    </span>
                   </div>
                 </div>
               ))}
@@ -873,15 +917,22 @@ export default function MenuSettingsPage() {
           </div>
 
           <div className="rounded-2xl border border-border bg-card p-6">
-            <div className="mb-6 flex items-center gap-2">
-              <Phone className="h-5 w-5 text-primary" />
+            <div className="mb-6 flex items-start gap-2">
+              <Phone className="mt-0.5 h-5 w-5 text-primary" />
 
-              <h2 className="text-xl font-semibold text-card-foreground">
-                Contato e localização
-              </h2>
+              <div>
+                <h2 className="text-xl font-semibold text-card-foreground">
+                  Contato e localização
+                </h2>
+
+                <p className="text-sm text-muted-foreground">
+                  Informações usadas pelo cliente para entrar em contato com o
+                  restaurante.
+                </p>
+              </div>
             </div>
 
-            <div className="space-y-5">
+            <div className="grid gap-5 md:grid-cols-2">
               <div>
                 <Label>WhatsApp do restaurante *</Label>
 
@@ -941,16 +992,16 @@ export default function MenuSettingsPage() {
                   />
                 </div>
               </div>
+            </div>
 
+            <div className="mt-6 flex justify-center">
               <Button
                 onClick={handleSaveContactData}
                 disabled={loadingContact || restaurantIsBlocked || isUploading}
-                className="w-full bg-primary text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                className="min-w-[240px] bg-primary px-6 text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Save size={16} />
-                {loadingContact
-                  ? "Salvando..."
-                  : "Salvar contato e localização"}
+                {loadingContact ? "Salvando..." : "Salvar contato e localização"}
               </Button>
             </div>
           </div>
