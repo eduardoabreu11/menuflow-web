@@ -88,15 +88,50 @@ function getStatusClass(plan: Plan) {
 }
 
 function normalizeMoney(value: string) {
-  const normalizedValue = value
-    .replace("R$", "")
-    .replace(/\./g, "")
-    .replace(",", ".")
-    .trim();
+  const cleanedValue = value.replace("R$", "").replace(/\s/g, "").trim();
 
-  return Number(normalizedValue);
+  if (!cleanedValue) {
+    return 0;
+  }
+
+  if (cleanedValue.includes(",")) {
+    const normalizedValue = cleanedValue.replace(/\./g, "").replace(",", ".");
+
+    const numberValue = Number(normalizedValue);
+
+    return Number.isFinite(numberValue) ? numberValue : 0;
+  }
+
+  const numberValue = Number(cleanedValue);
+
+  return Number.isFinite(numberValue) ? numberValue : 0;
 }
 
+function formatMoneyInput(value: string) {
+  const digits = value.replace(/\D/g, "");
+
+  if (!digits) {
+    return "";
+  }
+
+  return (Number(digits) / 100).toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+function formatMoneyForInput(value: string | number | null | undefined) {
+  if (value === null || value === undefined || value === "") {
+    return "";
+  }
+
+  const numberValue = normalizeMoney(String(value));
+
+  return numberValue.toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
 function normalizeLimit(value: string) {
   if (!value.trim()) {
     return UNLIMITED_LIMIT;
@@ -207,8 +242,8 @@ export default function MasterPlansPage() {
     setFormData({
       name: plan.name,
       description: plan.description ?? "",
-      monthly_price: String(plan.monthly_price ?? ""),
-      annual_price: String(plan.annual_price ?? ""),
+      monthly_price: formatMoneyForInput(plan.monthly_price),
+      annual_price: formatMoneyForInput(plan.annual_price),
       max_restaurants: getLimitInputValue(plan.max_restaurants),
       max_products: getLimitInputValue(plan.max_products),
       max_categories: getLimitInputValue(plan.max_categories),
@@ -222,8 +257,8 @@ export default function MasterPlansPage() {
     setFormData({
       name: plan.name,
       description: plan.description ?? "",
-      monthly_price: String(plan.monthly_price ?? ""),
-      annual_price: String(plan.annual_price ?? ""),
+      monthly_price: formatMoneyForInput(plan.monthly_price),
+      annual_price: formatMoneyForInput(plan.annual_price),
       max_restaurants: getLimitInputValue(plan.max_restaurants),
       max_products: getLimitInputValue(plan.max_products),
       max_categories: getLimitInputValue(plan.max_categories),
@@ -447,9 +482,7 @@ export default function MasterPlansPage() {
                     <th className="px-5 py-4 font-medium">Produtos</th>
                     <th className="px-5 py-4 font-medium">Categorias</th>
                     <th className="px-5 py-4 font-medium">Status</th>
-                    <th className="px-5 py-4 text-right font-medium">
-                      Ações
-                    </th>
+                    <th className="px-5 py-4 text-right font-medium">Ações</th>
                   </tr>
                 </thead>
 
@@ -650,10 +683,15 @@ export default function MasterPlansPage() {
                 </label>
 
                 <input
+                  type="text"
+                  inputMode="numeric"
                   value={formData.monthly_price}
                   disabled={modalMode === "view"}
                   onChange={(event) =>
-                    updateFormField("monthly_price", event.target.value)
+                    updateFormField(
+                      "monthly_price",
+                      formatMoneyInput(event.target.value),
+                    )
                   }
                   placeholder="59,90"
                   className="mt-2 h-10 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary disabled:cursor-not-allowed disabled:opacity-60"
@@ -666,10 +704,15 @@ export default function MasterPlansPage() {
                 </label>
 
                 <input
+                  type="text"
+                  inputMode="numeric"
                   value={formData.annual_price}
                   disabled={modalMode === "view"}
                   onChange={(event) =>
-                    updateFormField("annual_price", event.target.value)
+                    updateFormField(
+                      "annual_price",
+                      formatMoneyInput(event.target.value),
+                    )
                   }
                   placeholder="599,90"
                   className="mt-2 h-10 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary disabled:cursor-not-allowed disabled:opacity-60"

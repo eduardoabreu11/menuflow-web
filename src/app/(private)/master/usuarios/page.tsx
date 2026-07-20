@@ -274,15 +274,50 @@ function formatCurrency(value?: string | number | null) {
 }
 
 function normalizeMoney(value: string) {
-  const normalizedValue = value
-    .replace("R$", "")
-    .replace(/\./g, "")
-    .replace(",", ".")
-    .trim();
+  const cleanedValue = value.replace("R$", "").replace(/\s/g, "").trim();
 
-  return Number(normalizedValue);
+  if (!cleanedValue) {
+    return 0;
+  }
+
+  if (cleanedValue.includes(",")) {
+    const normalizedValue = cleanedValue.replace(/\./g, "").replace(",", ".");
+
+    const numberValue = Number(normalizedValue);
+
+    return Number.isFinite(numberValue) ? numberValue : 0;
+  }
+
+  const numberValue = Number(cleanedValue);
+
+  return Number.isFinite(numberValue) ? numberValue : 0;
 }
 
+function formatMoneyInput(value: string) {
+  const digits = value.replace(/\D/g, "");
+
+  if (!digits) {
+    return "";
+  }
+
+  return (Number(digits) / 100).toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+function formatMoneyForInput(value: string | number | null | undefined) {
+  if (value === null || value === undefined || value === "") {
+    return "";
+  }
+
+  const numberValue = normalizeMoney(String(value));
+
+  return numberValue.toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
 function getSubscriptionDateTime(subscription: Subscription) {
   const value = subscription.created_at;
 
@@ -358,8 +393,9 @@ export default function MasterUsersPage() {
   const [editRole, setEditRole] =
     useState<EditableUserRole>("RESTAURANT_OWNER");
 
-  const [editSubscription, setEditSubscription] =
-    useState<Subscription | null>(null);
+  const [editSubscription, setEditSubscription] = useState<Subscription | null>(
+    null,
+  );
   const [editWithSubscription, setEditWithSubscription] = useState(false);
   const [editSubscriptionPlanId, setEditSubscriptionPlanId] = useState("");
   const [editSubscriptionStatus, setEditSubscriptionStatus] =
@@ -386,7 +422,7 @@ export default function MasterUsersPage() {
   function getPlanMonthlyPrice(plan: Plan | null) {
     if (!plan) return "";
 
-    return String(plan.monthly_price ?? "");
+    return formatMoneyForInput(plan.monthly_price);
   }
 
   async function loadUsers() {
@@ -513,10 +549,7 @@ export default function MasterUsersPage() {
         subscription?.status === subscriptionFilter;
 
       return (
-        matchesSearch &&
-        matchesRole &&
-        matchesStatus &&
-        matchesSubscription
+        matchesSearch && matchesRole && matchesStatus && matchesSubscription
       );
     });
   }, [
@@ -587,8 +620,8 @@ export default function MasterUsersPage() {
       subscription && subscription.status !== "CANCELED" ? subscription : null;
 
     const matchedPlan = editableSubscription
-      ? plans.find((plan) => plan.name === editableSubscription.plan_name) ??
-        null
+      ? (plans.find((plan) => plan.name === editableSubscription.plan_name) ??
+        null)
       : null;
 
     const selectedPlan = matchedPlan ?? getFirstAvailablePlan();
@@ -598,7 +631,7 @@ export default function MasterUsersPage() {
     setEditSubscriptionPlanId(selectedPlan?.id ?? "");
     setEditSubscriptionMonthlyPrice(
       editableSubscription
-        ? String(editableSubscription.monthly_price ?? "")
+        ? formatMoneyForInput(editableSubscription.monthly_price)
         : getPlanMonthlyPrice(selectedPlan),
     );
     setEditSubscriptionNextBillingDate(
@@ -925,7 +958,8 @@ export default function MasterUsersPage() {
               <h1 className="text-3xl font-bold text-foreground">Usuários</h1>
 
               <p className="mt-1 text-muted-foreground">
-                Gerencie usuários, planos e assinaturas dos donos de restaurante.
+                Gerencie usuários, planos e assinaturas dos donos de
+                restaurante.
               </p>
             </div>
 
@@ -1124,7 +1158,10 @@ export default function MasterUsersPage() {
 
                                 {subscription && (
                                   <p className="mt-1 text-xs text-muted-foreground">
-                                    Assinatura: {getSubscriptionStatusLabel(subscription.status)}
+                                    Assinatura:{" "}
+                                    {getSubscriptionStatusLabel(
+                                      subscription.status,
+                                    )}
                                   </p>
                                 )}
                               </div>
@@ -1183,9 +1220,7 @@ export default function MasterUsersPage() {
                               ) : (
                                 <button
                                   type="button"
-                                  onClick={() =>
-                                    handleOpenActivateDialog(user)
-                                  }
+                                  onClick={() => handleOpenActivateDialog(user)}
                                   className="rounded-lg border border-border p-2 text-green-600 transition hover:bg-green-50"
                                   title="Ativar usuário"
                                 >
@@ -1266,9 +1301,7 @@ export default function MasterUsersPage() {
               <select
                 value={createRole}
                 onChange={(event) =>
-                  handleCreateRoleChange(
-                    event.target.value as EditableUserRole,
-                  )
+                  handleCreateRoleChange(event.target.value as EditableUserRole)
                 }
                 className="mt-2 h-10 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-primary"
               >
@@ -1296,8 +1329,8 @@ export default function MasterUsersPage() {
                     </Label>
 
                     <p className="mt-1 text-xs text-muted-foreground">
-                      Se desmarcar, o dono será criado sem plano e poderá receber
-                      uma assinatura depois.
+                      Se desmarcar, o dono será criado sem plano e poderá
+                      receber uma assinatura depois.
                     </p>
                   </div>
                 </div>
@@ -1368,9 +1401,13 @@ export default function MasterUsersPage() {
                       <Label>Valor mensal</Label>
 
                       <Input
+                        type="text"
+                        inputMode="numeric"
                         value={createSubscriptionMonthlyPrice}
                         onChange={(event) =>
-                          setCreateSubscriptionMonthlyPrice(event.target.value)
+                          setCreateSubscriptionMonthlyPrice(
+                            formatMoneyInput(event.target.value),
+                          )
                         }
                         placeholder="59,90"
                         className="mt-2"
@@ -1488,8 +1525,7 @@ export default function MasterUsersPage() {
                     <p className="mt-1 text-xs text-muted-foreground">
                       Status:{" "}
                       {getSubscriptionStatusLabel(editSubscription.status)} ·
-                      Vence em{" "}
-                      {formatDate(editSubscription.next_billing_date)}
+                      Vence em {formatDate(editSubscription.next_billing_date)}
                     </p>
                   </div>
                 )}
@@ -1548,9 +1584,7 @@ export default function MasterUsersPage() {
                         type="date"
                         value={editSubscriptionNextBillingDate}
                         onChange={(event) =>
-                          setEditSubscriptionNextBillingDate(
-                            event.target.value,
-                          )
+                          setEditSubscriptionNextBillingDate(event.target.value)
                         }
                         className="mt-2"
                       />
@@ -1560,9 +1594,13 @@ export default function MasterUsersPage() {
                       <Label>Valor mensal</Label>
 
                       <Input
+                        type="text"
+                        inputMode="numeric"
                         value={editSubscriptionMonthlyPrice}
                         onChange={(event) =>
-                          setEditSubscriptionMonthlyPrice(event.target.value)
+                          setEditSubscriptionMonthlyPrice(
+                            formatMoneyInput(event.target.value),
+                          )
                         }
                         placeholder="59,90"
                         className="mt-2"
